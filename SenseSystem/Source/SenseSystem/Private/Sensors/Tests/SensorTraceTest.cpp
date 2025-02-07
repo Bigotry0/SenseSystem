@@ -31,7 +31,7 @@ EUpdateReady USensorTraceTest::GetReadyToTest()
 	bool bNeedInitCollision;
 	{
 		const TArray<AActor*>& IgnActors = GetSensorOwner()->GetIgnoredActors();
-		const auto& IgnCollisions = Collision_Params.GetIgnoredActors();
+		const auto& IgnCollisions = Collision_Params.GetIgnoredSourceObjects();
 
 		bNeedInitCollision = IgnCollisions.Num() != IgnActors.Num();
 		if (!bNeedInitCollision)

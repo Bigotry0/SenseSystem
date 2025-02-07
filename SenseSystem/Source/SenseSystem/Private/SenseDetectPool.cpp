@@ -165,7 +165,7 @@ void FSenseDetectPool::BestScoreUpdt(TArray<ElementIndexType>& InArr, const bool
 		}
 		if (InArr.Num() > BestScore.Num())
 		{
-			InArr.RemoveAt(BestScore.Num(), InArr.Num() - BestScore.Num(), true); // cut Arr by IDs Num
+			InArr.RemoveAt(BestScore.Num(), InArr.Num() - BestScore.Num(), EAllowShrinking::Yes); // cut Arr by IDs Num
 		}
 		Algo::Sort(BestScore, FSortScorePredicate(ObjPool, InArr)); //sort back to score
 	}
@@ -380,7 +380,7 @@ void FSenseDetectPool::NewAgeUpdate(const float CurrentTime, const EOnSenseEvent
 			r++;
 			if (r < Lost.Num())
 			{
-				Lost.RemoveAt(r, Lost.Num() - r, true);
+				Lost.RemoveAt(r, Lost.Num() - r, EAllowShrinking::Yes);
 			}
 			ArraySorted::ArrayMinusArray_SortedPredicate(LostCurrent, Rem, FSortIDPredicate(GetPool()));
 			EmptyArr(MoveTemp(Rem));

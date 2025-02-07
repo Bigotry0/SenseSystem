@@ -991,17 +991,17 @@ bool USenseReceiverComponent::DestroySensor(const ESensorType Sensor_Type, const
 			{
 				case ESensorType::Active:
 				{
-					ActiveSensors.RemoveAt(FindSenIdx, 1, false);
+					ActiveSensors.RemoveAt(FindSenIdx, 1, EAllowShrinking::No);
 					break;
 				}
 				case ESensorType::Passive:
 				{
-					PassiveSensors.RemoveAt(FindSenIdx, 1, false);
+					PassiveSensors.RemoveAt(FindSenIdx, 1, EAllowShrinking::No);
 					break;
 				}
 				case ESensorType::Manual:
 				{
-					ManualSensors.RemoveAt(FindSenIdx, 1, false);
+					ManualSensors.RemoveAt(FindSenIdx, 1, EAllowShrinking::No);
 					break;
 				}
 			}

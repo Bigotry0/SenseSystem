@@ -99,7 +99,7 @@ ESenseTestResult USensorBoxTest::RunTestForLocation(const FSensedStimulus& Sense
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_BoxTest);
 	if (AABB_Box.IsInsideOrOn(TestLocation)) //AABB
 	{
-		FVector TestLoc;
+		FVector TestLoc = FVector();
 		if (bOrientedBox)
 		{
 			TestLoc = GetSensorTransform().InverseTransformPositionNoScale(TestLocation);

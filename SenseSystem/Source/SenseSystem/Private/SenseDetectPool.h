@@ -262,7 +262,7 @@ inline void FSenseDetectPool::BestIdsByPredicate(const int32 Count, const TArray
 
 			if (Out.Num() > Count)
 			{
-				Out.RemoveAt(Count, Out.Num() - Count, true);
+				Out.RemoveAt(Count, Out.Num() - Count, EAllowShrinking::Yes);
 			}
 		}
 	}

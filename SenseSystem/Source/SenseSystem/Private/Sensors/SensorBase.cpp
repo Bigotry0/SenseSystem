@@ -911,7 +911,7 @@ TArray<FStimulusFindResult> USensorBase::UnRegisterSenseStimulus(USenseStimulusB
 							checkSlow(FindIndex == Ch.BestSensedID_ByScore.IndexOfByKey(It.SensedID));
 							if (FindIndex != INDEX_NONE)
 							{
-								Ch.BestSensedID_ByScore.RemoveAt(FindIndex, 1, false);
+								Ch.BestSensedID_ByScore.RemoveAt(FindIndex, 1, EAllowShrinking::No);
 							}
 							for (int32& BestIt : Ch.BestSensedID_ByScore)
 							{
@@ -936,7 +936,7 @@ TArray<FStimulusFindResult> USensorBase::UnRegisterSenseStimulus(USenseStimulusB
 					}
 
 					TArray<FSensedStimulus>* Array = Ch.GetSensedStimulusBySenseEvent(It.SensedType);
-					Array->RemoveAt(It.SensedID, 1, false);
+					Array->RemoveAt(It.SensedID, 1, EAllowShrinking::No);
 #if WITH_EDITOR
 					for (const int32 BestIt : Ch.BestSensedID_ByScore)
 					{

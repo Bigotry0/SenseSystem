@@ -11,6 +11,7 @@
 #include "Templates/Function.h"
 #include "Templates/TypeHash.h"
 #include "Templates/UnrealTemplate.h"
+#include "Templates/ChooseClass.h"
 
 #include "Containers/Array.h"
 #include "Containers/ContainerAllocationPolicies.h"
@@ -126,18 +127,18 @@ struct TTreeBox
 	using VSpace = FVectorSpace<InVectorSpace>;
 
 	TTreeBox()
-		: Min(0) //
-		, Max(0)
+		: min(0) //
+		, max(0)
 		, Center(0)
 	{}
 	explicit TTreeBox(Real HalfSize)
-		: Min(PointType{-HalfSize, -HalfSize}) //
-		, Max(PointType{HalfSize, HalfSize})
+		: min(PointType{-HalfSize, -HalfSize}) //
+		, max(PointType{HalfSize, HalfSize})
 		, Center((Max + Min) / 2)
 	{}
 	explicit TTreeBox(PointType Point)
-		: Min(Point) //
-		, Max(Point)
+		: min(Point) //
+		, max(Point)
 		, Center(Point)
 	{}
 	TTreeBox(const PointType& InMin, const PointType& InMax)
@@ -410,7 +411,6 @@ public:
 		}
 		checkNoEntry();
 		UE_ASSUME(0);
-		return SubNodes[0];
 	}
 
 	FORCEINLINE uint8 GetQuad(const PointType& P) const
@@ -1247,7 +1247,7 @@ private:
 				{
 					IndexQtType& QtID_Ref = GetElementTreeID(ObjID);
 					QtID_Ref = TreeID;
-					TreeRef.Nodes.RemoveAtSwap(i, 1, false);
+					TreeRef.Nodes.RemoveAtSwap(i, 1, EAllowShrinking::No);
 				}
 			}
 		}
@@ -1353,7 +1353,7 @@ private:
 			if (ElementIdx != INDEX_NONE)
 			{
 				const bool bShrink = SelfNode.Nodes.Num() > InlineAllocatorSize;
-				SelfNode.Nodes.RemoveAtSwap(ElementIdx, 1, bShrink);
+				SelfNode.Nodes.RemoveAtSwap(ElementIdx, 1, bShrink ? EAllowShrinking::Yes : EAllowShrinking::No);
 				return true;
 			}
 		}
