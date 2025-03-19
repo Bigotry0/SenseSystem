@@ -11,11 +11,11 @@
 #include "Templates/Sorting.h"
 
 
-/** ArrayHelpers */
+/**
+*	ArrayHelpers
+*/
 namespace ArrayHelpers
 {
-	using BoundIdx = FIntPoint;
-
 	template<typename T>
 	void CopyFrom_EndB_To_EndA(TArray<T>& A, const TArray<T>& B, int32 MergeCount)
 	{
@@ -56,9 +56,9 @@ namespace ArrayHelpers
 
 	//return start index and count relative to 0
 	template<typename T, typename ValidPredicate>
-	BoundIdx GetValidBounds(const TArray<T>& A, ValidPredicate Predicate)
+	FIntPoint GetValidBounds(const TArray<T>& A, ValidPredicate Predicate)
 	{
-		BoundIdx Out(INDEX_NONE, INDEX_NONE);
+		FIntPoint Out(INDEX_NONE, INDEX_NONE);
 		for (int32 i = 0; i < A.Num(); i++)
 		{
 			if (Out.X == INDEX_NONE && Predicate(A[i]))
@@ -81,7 +81,7 @@ namespace ArrayHelpers
 	bool Filter_BreakSort(TArray<T>& Arr, RemovePredicate Predicate, bool bShrink = true)
 	{
 		int32 RemID = Arr.Num();
-		for (int32 i = Arr.Num() - 1; i > INDEX_NONE; i--)
+		for (int32 i = Arr.Num() - 1; i > INDEX_NONE; --i)
 		{
 			if (Predicate(Arr[i]))
 			{
@@ -101,7 +101,7 @@ namespace ArrayHelpers
 	bool Filter_BreakSort_V2(TArray<T>& Arr, RemovePredicate Predicate, bool bShrink = true)
 	{
 		int32 RemID = Arr.Num();
-		for (int32 i = Arr.Num() - 1; i > INDEX_NONE; i--)
+		for (int32 i = Arr.Num() - 1; i > INDEX_NONE; --i)
 		{
 			if (Predicate(Arr, i))
 			{
@@ -131,7 +131,7 @@ namespace ArrayHelpers
 		r++;
 		if (r < A.Num())
 		{
-			A.RemoveAt(r, A.Num() - r, bShrink ? EAllowShrinking::Yes : EAllowShrinking::No);
+			A.RemoveAt(r, A.Num() - r, bShrink);
 			return true;
 		}
 		return false;
@@ -152,7 +152,7 @@ namespace ArrayHelpers
 		r++;
 		if (r < A.Num())
 		{
-			A.RemoveAt(r, A.Num() - r, bShrink ? EAllowShrinking::Yes : EAllowShrinking::No);
+			A.RemoveAt(r, A.Num() - r, bShrink);
 			return true;
 		}
 		return false;
@@ -160,72 +160,86 @@ namespace ArrayHelpers
 
 } // namespace ArrayHelpers
 
-/** ArraySorted */
+/**
+*	ArraySorted
+*/
 namespace ArraySorted
 {
-	using BoundIdx = ArrayHelpers::BoundIdx;
 
-	inline int32 BoundCount(const BoundIdx Bound)
-	{
-		return (Bound.Y - Bound.X) + 1;
-	}
-	inline bool IsValidBound(const BoundIdx Bound, const int32 ArrayNum)
-	{
-		return BoundCount(Bound) > 0 && (Bound.X < ArrayNum) && (Bound.Y < ArrayNum);
-	}
-
-	template<typename ArrayA, typename ArrayB, typename SortPredicateType>
-	void GetBoundAofB_P(const ArrayA& A, const ArrayB& B, SortPredicateType SortPredicate, BoundIdx& OutA, BoundIdx& OutB)
+	template<typename T, typename SortPredicateType>
+	TArrayView<const T> GetBoundAofB(TArrayView<const T> A, TArrayView<const T>& B, SortPredicateType SortPredicate)
 	{
 		if (A.Num() > 0 && B.Num() > 0)
 		{
-			int32 i;
-			for (i = 0; i < B.Num(); i++)
+			const int32 X = Algo::LowerBound(A, B[0], SortPredicate);
+			int32 Y = Algo::LowerBound(A, B.Last(), MoveTempIfPossible(SortPredicate));
+			if (A.IsValidIndex(Y) && A[Y] == B.Last())
 			{
-				OutA.X = Algo::BinarySearch(A, B[i], SortPredicate);
-				if (OutA.X != INDEX_NONE) break;
+				++Y;
 			}
-			if (OutA.X != INDEX_NONE)
+			const int32 Num = Y - X;
+			if (Num > 0)
 			{
-				OutB.X = i;
-				for (int32 j = B.Num() - 1; j > i; j--)
-				{
-					OutA.Y = Algo::BinarySearch(A, B[j], SortPredicate);
-					if (OutA.Y != INDEX_NONE)
-					{
-						OutB.Y = j;
-						return;
-					}
-				}
+				return A.Slice(X, Num);
 			}
 		}
-		OutA = {INDEX_NONE, INDEX_NONE};
-		OutB = {INDEX_NONE, INDEX_NONE};
+		return TArrayView<const T>();
 	}
 
-	/*
-	template<typename T, typename U, typename SortPredicateType>
-	void GetBoundAofB(TArrayView<T> A, TArrayView<U>& B, SortPredicateType SortPredicate, TArrayView<T>& OutA, TArrayView<U>& OutB)
+	template<typename T, typename SortPredicateType>
+	TArrayView<T> GetBoundAofB(TArrayView<T> A, TArrayView<const T>& B, SortPredicateType SortPredicate)
 	{
-		OutA = TArrayView<T>(nullptr, 0);
-		OutB = TArrayView<U>(nullptr, 0);
 		if (A.Num() > 0 && B.Num() > 0)
 		{
-			BoundIdx OutAp, OutBp;
-			GetBoundAofB_P(A, B, SortPredicate, OutAp, OutBp);
-			if (IsValidBound(OutAp, A.Num()) && IsValidBound(OutBp, B.Num()))
+			const int32 X = Algo::LowerBound(A, B[0], SortPredicate);
+			int32 Y = Algo::LowerBound(A, B.Last(), MoveTempIfPossible(SortPredicate));
+			if (A.IsValidIndex(Y) && A[Y] == B.Last())
 			{
-				OutA = TArrayView<T>(A.GetData() + OutAp.X, OutAp.X - OutAp.Y);
-				OutA = TArrayView<T>(A.GetData() + OutBp.X, OutBp.X - OutBp.Y);
+				++Y;
+			}
+			const int32 Num = Y - X;
+			if (Num > 0)
+			{
+				return A.Slice(X, Num);
 			}
 		}
+		return TArrayView<T>();
 	}
-	*/
+
+	template<typename T, typename SortPredicateType>
+	TArrayView<const T> GetBoundAofB(TArrayView<const T> A, TArrayView<T>& B, SortPredicateType SortPredicate)
+	{
+		if (A.Num() > 0 && B.Num() > 0)
+		{
+			const int32 X = Algo::LowerBound(A, B[0], SortPredicate);
+			int32 Y = Algo::LowerBound(A, B.Last(), MoveTempIfPossible(SortPredicate));
+			if (A.IsValidIndex(Y) && A[Y] == B.Last())
+			{
+				++Y;
+			}
+			const int32 Num = Y - X;
+			if (Num > 0)
+			{
+				return A.Slice(X, Num);
+			}
+		}
+		return TArrayView<const T>();
+	}
+
+
+	inline int32 BoundCount(const FIntPoint Bound)
+	{
+		return (Bound.Y - Bound.X);
+	}
+	inline bool IsValidBound(const FIntPoint Bound, const int32 ArrayNum)
+	{
+		return (BoundCount(Bound) > 0) && (Bound.X < ArrayNum);
+	}
 
 	/***************************************/
 
 	template<typename T, typename SortPredicateType>
-	FORCEINLINE bool Contains_SortedPredicate(const TArray<T>& A, const T& Elem, SortPredicateType SortPredicate)
+	bool Contains_SortedPredicate(const TArray<T>& A, const T& Elem, SortPredicateType SortPredicate)
 	{
 		return INDEX_NONE != Algo::BinarySearch(A, Elem, MoveTempIfPossible(SortPredicate));
 	}
@@ -336,6 +350,23 @@ namespace ArraySorted
 
 	/***************************************/
 
+	template<typename ArrA, typename ArrB, typename SortPredicateType>
+	FIntPoint GetBoundAofB_P(ArrA A, ArrB B, SortPredicateType SortPredicate)
+	{
+		if (A.Num() > 0 && B.Num() > 0)
+		{
+			const int32 X = Algo::LowerBound(A, B[0], SortPredicate);
+			int32 Y = Algo::LowerBound(A, B.Last(), MoveTempIfPossible(SortPredicate));
+			if (A.IsValidIndex(Y) && A[Y] == B.Last())
+			{
+				++Y;
+			}
+			return FIntPoint(X, Y);
+		}
+		return FIntPoint(0, 0);
+	}
+
+
 	template<typename T, typename SortPredicateType>
 	void Merge_SortedPredicate(TArray<T>& A, const TArray<T>& B, SortPredicateType SortPredicate, const bool bOverride = true)
 	{
@@ -364,63 +395,52 @@ namespace ArraySorted
 			}
 			else
 			{
-				//todo: need check is all must work without error
 				A.Reserve(A.Num() + B.Num());
-				BoundIdx BoundA, BoundB;
-				GetBoundAofB_P(A, B, SortPredicate, BoundA, BoundB);
 
-				A.Insert(B, BoundA.Y); //todo: check range insert end
+				const FIntPoint Bound = GetBoundAofB_P(A, B, SortPredicate);
 
-				int32 i = BoundA.Y - 1; //from end A
-				int32 j = BoundB.Y;		//from end B
+				A.Insert(B, Bound.Y);
+
+				int32 i = Bound.Y - 1; //from end A
+				int32 j = B.Num() - 1; //from end B
 				int32 EndID = i + B.Num();
 				int32 DuplicateCount = 0;
-				int32 SeqA = 0;
-				while (j >= 0) //duplicate //&& EndID >= BoundA.X
+				while (j >= 0) //duplicate //&& EndID >= Bound.X
 				{
-					checkSlow(EndID >= BoundA.X);
-					if (i >= BoundA.X && SortPredicate(B[j], A[i])) //A > B
+					checkSlow(EndID >= Bound.X);
+					if (i >= Bound.X && A[i] == B[j])
 					{
-						SeqA++;
-						//A[EndID] = MoveTemp(A[i]);
-						i--;
+						DuplicateCount++;
+						A[EndID] = bOverride ? B[j] : MoveTemp(A[i]);
+						--i;
+						--j;
 					}
-					else
+					else if (i >= Bound.X && SortPredicate(B[j], A[i])) //A > B
 					{
-						if (SeqA > 0) //todo move to i - SeqA : A[EndID] = MoveTemp(A[i]);
-						{
-							FMemory::Memmove(A.GetData() + EndID, A.GetData() + i, SeqA);
-							SeqA = 0;
-						}
-						if (i >= BoundA.X && A[i] == B[j]) //A == B
-						{
-							DuplicateCount++;
-							A[EndID] = bOverride ? B[j] : MoveTemp(A[i]);
-							i--;
-							j--;
-						}
-						else //A < B
-						{
-							A[EndID] = B[j];
-							j--;
-						}
-						EndID--;
+						A[EndID] = MoveTemp(A[i]);
+						--i;
 					}
-					if (DuplicateCount > 0)
+					else //A < B
 					{
-						A.RemoveAt(BoundA.X, DuplicateCount, EAllowShrinking::Yes);
+						A[EndID] = B[j];
+						--j;
 					}
-
-					//#if WITH_EDITOR
-					//				for (const auto& It : B)
-					//				{
-					//					check(A.Contains(It));
-					//				}
-					//#endif
+					--EndID;
 				}
-				//checkSlow(Algo::IsSorted(A, SortPredicate));
-				//checkSlow(!ContainsDuplicates_Sorted(A));
+				if (DuplicateCount > 0)
+				{
+					A.RemoveAt(Bound.X, DuplicateCount, true);
+				}
+
+				//#if WITH_EDITOR
+				//				for (const auto& It : B)
+				//				{
+				//					check(A.Contains(It));
+				//				}
+				//#endif
 			}
+			//checkSlow(Algo::IsSorted(A, SortPredicate));
+			//checkSlow(!ContainsDuplicates_Sorted(A));
 		}
 	}
 
@@ -451,39 +471,38 @@ namespace ArraySorted
 			else
 			{
 				A.Reserve(A.Num() + B.Num());
-				BoundIdx BoundA, BoundB;
-				GetBoundAofB_P(A, B, SortPredicate, BoundA, BoundB);
-				A.Insert(B, BoundA.Y);
+				const FIntPoint Bound = GetBoundAofB_P(A, B, SortPredicate);
+				A.Insert(B, Bound.Y);
 
-				int32 i = BoundA.Y - 1; //from end A
-				int32 j = B.Num() - 1;	//from end B
+				int32 i = Bound.Y - 1; //from end A
+				int32 j = B.Num() - 1; //from end B
 				int32 EndID = i + B.Num();
 				int32 DuplicateCount = 0;
-				while (j >= 0) //duplicate //&& EndID >= BoundA.X
+				while (j >= 0) //duplicate //&& EndID >= Bound.X
 				{
-					checkSlow(EndID >= BoundA.X);
-					if (i >= BoundA.X && A[i] == B[j])
+					checkSlow(EndID >= Bound.X);
+					if (i >= Bound.X && A[i] == B[j])
 					{
 						DuplicateCount++;
 						A[EndID] = bOverride ? B[j] : MoveTemp(A[i]);
-						i--;
-						j--;
+						--i;
+						--j;
 					}
-					else if (i >= BoundA.X && SortPredicate(B[j], A[i])) //A > B
+					else if (i >= Bound.X && SortPredicate(B[j], A[i])) //A > B
 					{
 						A[EndID] = MoveTemp(A[i]);
-						i--;
+						--i;
 					}
 					else //A < B
 					{
 						A[EndID] = MoveTemp(B[j]);
-						j--;
+						--j;
 					}
-					EndID--;
+					--EndID;
 				}
 				if (DuplicateCount > 0)
 				{
-					A.RemoveAt(BoundA.X, DuplicateCount, EAllowShrinking::Yes);
+					A.RemoveAt(Bound.X, DuplicateCount, true);
 				}
 			}
 			//checkSlow(Algo::IsSorted(A, SortPredicate));
@@ -495,17 +514,17 @@ namespace ArraySorted
 
 	/** O(M+N) ,O(BoundCount(Bound_A) + BoundCount(Bound_B))*/
 	template<typename T, typename SortPredicateType>
-	BoundIdx ArrayMinusArray_Linear_SortedPredicate_Check(
+	FIntPoint ArrayMinusArray_Linear_SortedPredicate_Check(
 		TArrayView<T> A,
 		TArrayView<const T> B,
 		SortPredicateType SortPredicate,
-		const BoundIdx Bound_A,
-		const BoundIdx Bound_B)
+		const FIntPoint Bound_A,
+		const FIntPoint Bound_B)
 	{
 		int32 i = Bound_A.X;
 		int32 j = Bound_B.X;
 		int32 r = i - 1;
-		for (; i <= Bound_A.Y && j <= Bound_B.Y;)
+		while (i < Bound_A.Y && j < Bound_B.Y)
 		{
 			if (SortPredicate(A[i], B[j])) //A[i] < B[j]
 			{
@@ -528,22 +547,22 @@ namespace ArraySorted
 		}
 
 		r++;
-		return BoundIdx(r, i - r);
+		return FIntPoint(r, i - r);
 	}
 
+	/** O(A*log(B-K)) , O(BoundCount(Bound_A) * (int32)FMath::Loge((float)BoundCount(Bound_B)))*/
 	template<typename T, typename SortPredicateType>
-	BoundIdx ArrayMinusArray_Binary_SortedPredicate_Check(
-		TArrayView<T>& A,
-		TArrayView<const T>& B,
+	FIntPoint ArrayMinusArray_Binary_SortedPredicate_Check(
+		TArrayView<T> A,
+		TArrayView<const T> B,
 		SortPredicateType SortPredicate,
-		const BoundIdx Bound_A,
-		BoundIdx Bound_B)
+		const FIntPoint Bound_A,
+		FIntPoint Bound_B)
 	{
 		int32 ID = Bound_B.X;
 		int32 i = Bound_A.X;
 		int32 r = i - 1;
-		//for (;i < A.Num() && ID < B.Num() && Bound_B.X < Bound_B.Y;)
-		for (; i <= Bound_A.Y && ID <= Bound_B.Y && Bound_B.X <= Bound_B.Y;)
+		while (i < Bound_A.Y && ID < Bound_B.Y && Bound_B.X < Bound_B.Y)
 		{
 			if (ID == INDEX_NONE || !(A[i] == B[ID]))
 			{
@@ -551,7 +570,7 @@ namespace ArraySorted
 				ID = Algo::LowerBound(AvA, A[i], SortPredicate);
 				if (AvA.IsValidIndex(ID) && AvA[ID] == A[i])
 				{
-					ID += Bound_B.X; //todo check
+					ID += Bound_B.X;
 				}
 				else
 				{
@@ -571,7 +590,7 @@ namespace ArraySorted
 			i++;
 		}
 		r++;
-		return BoundIdx(r, i - r);
+		return FIntPoint(r, i - r);
 	}
 
 	template<typename T, typename SortPredicateType>
@@ -586,14 +605,25 @@ namespace ArraySorted
 
 		TArrayView<const T> ViewB(B);
 		TArrayView<T> ViewA(A);
-		BoundIdx Bound_A, Bound_B;
-		GetBoundAofB_P(ViewA, ViewB, SortPredicate, Bound_A, Bound_B);
-		//ViewA = TArrayView<const T>(ViewA[Bound_A.X], Bound_A.Y - Bound_A.X);
-		//ViewB = TArrayView<T>(ViewB[Bound_B.X], Bound_B.Y - Bound_B.X);
+
+		const FIntPoint Bound_A = GetBoundAofB_P(ViewA, ViewB, SortPredicate);
+		const FIntPoint Bound_B = GetBoundAofB_P(ViewB, ViewA, SortPredicate);
 
 		if (IsValidBound(Bound_A, A.Num()) && IsValidBound(Bound_B, B.Num()))
 		{
-			BoundIdx Rem;
+			//float K = (float)(Bound_B.Y - Bound_B.X) / (float)(Bound_A.Y - Bound_A.X);
+			//const int32 O_1 = BoundCount(Bound_A) + BoundCount(Bound_B);
+			//const int32 O_2 = BoundCount(Bound_A) * (int32)FMath::Loge((float)BoundCount(Bound_B));
+			//UE_LOG(LogSenseSys, Warning, TEXT("                            "));
+			//UE_LOG(LogSenseSys, Warning, TEXT("BoundCount(Bound_A) = %d"), BoundCount(Bound_A));
+			//UE_LOG(LogSenseSys, Warning, TEXT("BoundCount(Bound_B) = %d"), BoundCount(Bound_B));
+			//UE_LOG(LogSenseSys, Warning, TEXT("linear O_1 = %d"), O_1);
+			//UE_LOG(LogSenseSys, Warning, TEXT("binary O_2 = %d"), O_2);
+			//UE_LOG(LogSenseSys, Warning, TEXT("BoundCount(Bound_A)/  BoundCount(Bound_B)= %f"), (float)BoundCount(Bound_A) / (float)BoundCount(Bound_B));
+			//UE_LOG(LogSenseSys, Warning, TEXT("BoundCount(Bound_B)/  BoundCount(Bound_A)= %f"), (float)BoundCount(Bound_B) / (float)BoundCount(Bound_A));
+			//UE_LOG(LogSenseSys, Warning, TEXT("FMath::Loge((float)BoundCount(Bound_B) = %d"), (int32)FMath::Loge((float)BoundCount(Bound_B)) );
+
+			FIntPoint Rem;
 			if (BoundCount(Bound_A) <= BoundCount(Bound_B)) // todo:best average result?
 			{
 				Rem = ArrayMinusArray_Binary_SortedPredicate_Check(ViewA, ViewB, MoveTempIfPossible(SortPredicate), Bound_A, Bound_B);
@@ -602,9 +632,9 @@ namespace ArraySorted
 			{
 				Rem = ArrayMinusArray_Linear_SortedPredicate_Check(ViewA, ViewB, MoveTempIfPossible(SortPredicate), Bound_A, Bound_B);
 			}
-			if (Rem.X < A.Num() && Rem.Y != INDEX_NONE)
+			if (Rem.X < A.Num() && Rem.Y > 0)
 			{
-				A.RemoveAt(Rem.X, Rem.Y + 1, bShrink ? EAllowShrinking::Yes : EAllowShrinking::No);
+				A.RemoveAt(Rem.X, Rem.Y, bShrink);
 			}
 			//#if WITH_EDITOR
 			//			check(Algo::IsSorted(A, SortPredicate));
@@ -618,11 +648,11 @@ namespace ArraySorted
 		}
 	}
 
-	/*
+
 	//todo WIP
 	template<typename T, typename SortPredicateType>
 	UE_DEPRECATED(4.23, "not finished")
-	BoundIdx ArrayMinusArray_Binary_Check(TArrayView<T> Arr, TArrayView<const T> Brr, SortPredicateType SortPredicate)
+	FIntPoint ArrayMinusArray_Binary_Check(TArrayView<T> Arr, TArrayView<const T> Brr, SortPredicateType SortPredicate)
 	{
 		T* APtr = Arr.GetData();
 
@@ -661,26 +691,25 @@ namespace ArraySorted
 			}
 			r++;
 			//todo + offset
-			return BoundIdx(r + Delta, i - r);
+			return FIntPoint(r + Delta, i - r);
 		}
-		return BoundIdx(-1, 0);
+		return FIntPoint(-1, 0);
 	}
-	*/
 
 
 } // namespace ArraySorted
 
-/** HashSorted */
+/**
+*	HashSorted
+*/
 namespace HashSorted
 {
-	using BoundIdx = ArrayHelpers::BoundIdx;
-
 	/**auto Predicate = ([&](const T& a1, const T& b1) {return GetTypeHash(a1) < GetTypeHash(b1); })*/
 	/**auto Predicate = TSortHashPredicate<T>()*/
 	template<typename T>
 	struct TSortHashPredicate
 	{
-		FORCEINLINE bool operator()(const T& A, const T& B) const { return GetTypeHash(A) < GetTypeHash(B); }
+		bool operator()(const T& A, const T& B) const { return GetTypeHash(A) < GetTypeHash(B); }
 	};
 
 	template<typename T>
@@ -692,18 +721,18 @@ namespace HashSorted
 	};
 
 	template<typename T>
-	FORCEINLINE void ArrayMinusArray(TArray<T>& A, const TArray<T>& B, bool bShrink = true)
+	void ArrayMinusArray(TArray<T>& A, const TArray<T>& B, bool bShrink = true)
 	{
 		ArraySorted::ArrayMinusArray_SortedPredicate(A, B, TSortHashPredicate<T>(), bShrink);
 	}
 
 	template<typename T>
-	FORCEINLINE void Merge(TArray<T>& A, const TArray<T>& B, const bool bOverride = true)
+	void Merge(TArray<T>& A, const TArray<T>& B, const bool bOverride = true)
 	{
 		ArraySorted::Merge_SortedPredicate(A, B, TSortHashPredicate<T>(), bOverride);
 	}
 	template<typename T>
-	FORCEINLINE void Merge(TArray<T>& A, TArray<T>&& B, const bool bOverride = true)
+	void Merge(TArray<T>& A, TArray<T>&& B, const bool bOverride = true)
 	{
 		ArraySorted::Merge_SortedPredicate(A, B, TSortHashPredicate<T>(), bOverride);
 	}
@@ -753,7 +782,7 @@ namespace HashSorted
 
 	/**Duplicates*/
 	template<typename T>
-	FORCEINLINE bool RemoveDuplicates(TArray<T>& A)
+	bool RemoveDuplicates(TArray<T>& A)
 	{
 		return ArraySorted::RemoveDuplicates_Sorted(A);
 	}
@@ -774,7 +803,7 @@ namespace HashSorted
 	}
 
 	template<typename T>
-	FORCEINLINE int32 BinarySearch_InBound(const TArray<T>& A, const T& FindElement, int32 StartIdx = 0, int32 EndNum = MAX_int32)
+	int32 BinarySearch_InBound(const TArray<T>& A, const T& FindElement, int32 StartIdx = 0, int32 EndNum = MAX_int32)
 	{
 		if (EndNum == MAX_int32)
 		{
@@ -787,13 +816,13 @@ namespace HashSorted
 	/***************************************/
 
 	template<typename T>
-	FORCEINLINE int32 BinarySearch_HashType(const TArray<T>& A, const uint32 Hash)
+	int32 BinarySearch_HashType(const TArray<T>& A, const uint32 Hash)
 	{
 		return Algo::BinarySearch(A, Hash, TSortTypeHashPredicate<T>());
 	}
 
 	template<typename T>
-	FORCEINLINE bool Contains_HashType(const TArray<T>& A, const uint32 Hash)
+	bool Contains_HashType(const TArray<T>& A, const uint32 Hash)
 	{
 		if (A.Num())
 		{
@@ -808,12 +837,12 @@ namespace HashSorted
 	}
 
 	template<typename T>
-	FORCEINLINE int32 Remove_HashType(TArray<T>& A, const uint32 Hash, const bool bAllowShrinking = true)
+	int32 Remove_HashType(TArray<T>& A, const uint32 Hash, const bool bAllowShrinking = true)
 	{
 		const int32 ID = Algo::BinarySearch(A, Hash, TSortTypeHashPredicate<T>());
 		if (ID != INDEX_NONE)
 		{
-			A.RemoveAt(ID, 1, bAllowShrinking ? EAllowShrinking::Yes : EAllowShrinking::No);
+			A.RemoveAt(ID, 1, bAllowShrinking);
 		}
 		return ID;
 	}

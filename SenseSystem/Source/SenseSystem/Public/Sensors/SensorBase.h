@@ -15,7 +15,6 @@
 #include "Containers/Array.h"
 #include "Algo/IsSorted.h"
 
-#include "SenseSystem.h"
 #include "SenseSysHelpers.h"
 #include "SensedStimulStruct.h"
 #include "Sensors/Tests/SensorTestBase.h"
@@ -25,13 +24,13 @@
 	#include "SceneManagement.h"
 	#include "SceneView.h"
 #endif
-//#include <memory>
+
 #include "SensorBase.generated.h"
 
 
 class IContainerTree;
-class FSenseDetectPool;
-using ElementIndexType = FSenseSystemModule::ElementIndexType;
+
+// clang-format off
 
 /** CallStimulusFlag */
 UENUM(Meta = (Bitflags, UseEnumValuesAsMaskValuesInEditor = "true"))
@@ -42,6 +41,8 @@ enum class ECallStimulusFlag : uint8
 	CallOnLost          = 0x4,
 	CallOnForget        = 0x8	
 };
+
+// clang-format on
 
 
 enum class ESensorState : uint8
@@ -55,7 +56,7 @@ enum class ESensorState : uint8
 	PostUpdate
 };
 
-class FSensorState final : private FThreadSafeCounter
+class FSensorState : private FThreadSafeCounter
 {
 public:
 	FSensorState() {}
@@ -72,13 +73,15 @@ public:
 
 /** ChannelSetup */
 USTRUCT(BlueprintType)
-struct SENSESYSTEM_API FChannelSetup
+struct SENSESYSTEM_API FChannelSetup //128 byte
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
+	friend USensorBase;
 
 	FChannelSetup(const uint8 InSenseChannel = 1);
 	FChannelSetup(const FChannelSetup& In);
 	~FChannelSetup();
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ChannelSetup", meta = (ClampMin = "1", UIMin = "1", ClampMax = "64", UIMax = "64"))
 	uint8 Channel = 1;
@@ -145,9 +148,9 @@ struct SENSESYSTEM_API FChannelSetup
 	void SetTrackBestScoreCount(int32 Count);
 	void SetMinBestScore(float Score);
 
-	const TArray<FSensedStimulus>* GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent) const;
-	TArray<FSensedStimulus>* GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent);
-	const TArray<FSensedStimulus>* GetSensedStimulusBySenseEvent(EOnSenseEvent SenseEvent) const;
+	const TArray<FSensedStimulus>& GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent) const;
+	TArray<FSensedStimulus>& GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent);
+	const TArray<FSensedStimulus>& GetSensedStimulusBySenseEvent(EOnSenseEvent SenseEvent) const;
 
 	FChannelSetup& operator=(const FChannelSetup& Other);
 
@@ -160,28 +163,38 @@ struct SENSESYSTEM_API FChannelSetup
 		return Ar;
 	}
 
-	FORCEINLINE FSenseDetectPool* GetDetectPool() const { return _SenseDetect; }
+private:
+	void Init();
 
-	//sensorbase api
-	void NewSensedUpdate(EOnSenseEvent Ost, bool bOverrideSenseState, bool bNewSensForcedByBestScore) const;
-	void EmptyUpdate(EOnSenseEvent Ost, bool bOverrideSenseState) const;
-	void NewAgeUpdate(const float CurrentTime, const EOnSenseEvent Ost) const;
-	ElementIndexType ContainsInCurrentSense(const FSensedStimulus& InElem) const;
-	ElementIndexType ContainsInLostSense(const FSensedStimulus& InElem) const;
-	void Add(const float CurrentTime, FSensedStimulus&& SS, const ElementIndexType ID) const;
+	/** Deleter for forward class FSenseDetectPool */
+	struct FDeleterSdp
+	{
+		FDeleterSdp() = default;
+		FDeleterSdp(const FDeleterSdp&) = default;
+		~FDeleterSdp() = default;
+		FDeleterSdp& operator=(const FDeleterSdp&) = default;
+		void operator()(class FSenseDetectPool* Ptr) const;
+
+		template<typename U, typename = std::enable_if_t<TPointerIsConvertibleFromTo<U, FSenseDetectPool>::Value>>
+		FDeleterSdp(const TDefaultDelete<U>&)
+		{}
+		template<typename U, typename = std::enable_if_t<TPointerIsConvertibleFromTo<U, FSenseDetectPool>::Value>>
+		FDeleterSdp& operator=(const TDefaultDelete<U>&)
+		{
+			return *this;
+		}
+	};
+
+	TUniquePtr<FSenseDetectPool, FDeleterSdp> _SenseDetect = nullptr;
 
 	void OnSensorChannelUpdated(ESensorType InSensorType);
 	void OnSensorAgeUpdated(ESensorType InSensorType, EUpdateReady UpdateReady);
-	void Init(FSenseDetectPool* PoolPtr);
-
-private:	
-	FSenseDetectPool* _SenseDetect = nullptr;
 };
 
 USTRUCT(BlueprintType)
 struct SENSESYSTEM_API FStimulusFindResult
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 	FStimulusFindResult() {}
 	~FStimulusFindResult() {}
@@ -217,7 +230,7 @@ class AActor;
 
 
 /** UpdateSensorTask */
-class FUpdateSensorTask final : public FNonAbandonableTask
+class FUpdateSensorTask : public FNonAbandonableTask
 {
 	friend class FAutoDeleteAsyncTask<FUpdateSensorTask>;
 
@@ -242,10 +255,7 @@ class SENSESYSTEM_API USensorBase : public UObject
 {
 	GENERATED_BODY()
 public:
-
-	USensorBase();
 	USensorBase(const FObjectInitializer& ObjectInitializer);
-	USensorBase(FVTableHelper& Helper);
 	virtual ~USensorBase() override;
 
 	virtual void Serialize(FArchive& Ar) override;
@@ -255,6 +265,9 @@ public:
 	TArray<uint8> GetUniqueChannelSetup() const;
 
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& e) override;
+	//virtual void PreEditChange(class FEditPropertyChain& PropertyAboutToChange) override;
+	//virtual bool CanEditChange(const UProperty* InProperty) const override;
+	//	UFUNCTION()void OnPreCompile(class UBlueprint* BlueprintToCompile);
 
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& ValidationErrors) override;
 
@@ -268,6 +281,10 @@ public:
 #endif //WITH_EDITOR
 
 #if WITH_EDITORONLY_DATA
+
+	/********************************/
+	/*		SensorVisualization		*/
+	/********************************/
 
 	/** Draw Sensor on Edit or Selection */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sensor")
@@ -284,6 +301,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "SenseSystem|Sensor", meta = (Keywords = "Draw Debug Sensor"))
 	void DrawDebugSensor(bool bTest, bool bCurrentSensed, bool bLostSensed, bool bBestSensed, bool bAge, float Duration) const;
 
+	/********************************/
 
 	//virtual void Serialize(FArchive& Ar) override;
 	virtual void BeginDestroy() override;
@@ -300,6 +318,7 @@ public:
 
 	virtual bool IsOverrideSenseState() const { return true; }
 
+	/********************************/
 
 	EUpdateReady GetSensorUpdateReady() const;
 
@@ -311,6 +330,10 @@ public:
 	float GetSensorTestRadius() const;
 
 	void GetSensorTest_BoxAndRadius(FBox& OutBox, float& OutRadius) const;
+
+	/********************************/
+	/*			Main Settings		*/
+	/********************************/
 
 	/** Enable-Disable Sensor */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sensor")
@@ -326,7 +349,7 @@ public:
 
 	/** Sensor MultiThreading settings */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sensor")
-	ESensorThreadType SensorThreadType = ESensorThreadType::Main_Thread;
+	ESensorThreadType SensorThreadType = ESensorThreadType::Sense_Thread;
 
 	/** SensorTransform update on GetSensorReadyBP */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Sensor")
@@ -341,7 +364,7 @@ public:
 	EOnSenseEvent DetectDepth = EOnSenseEvent::SenseForget;
 
 	/** CallStimulusFlag */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sensor", meta = (Bitmask, BitmaskEnum = "/Script/SenseSystem.ECallStimulusFlag"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sensor", meta = (Bitmask, BitmaskEnum = "ECallStimulusFlag"))
 	uint8 CallStimulusFlag =										 //
 		static_cast<uint8>(ECallStimulusFlag::CallOnCurrentSensed) | //
 		static_cast<uint8>(ECallStimulusFlag::CallOnNewSensed) |	 //
@@ -349,25 +372,16 @@ public:
 		static_cast<uint8>(ECallStimulusFlag::CallOnForget);		 //
 
 
+	/********************************/
+	/*		   SenseChannels		*/
+	/********************************/
+
 	uint64 GetBitChannelChannelSetup() const;
 
 	/** Response Channels */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sensor", meta = (DisplayName = "SenseChannels"))
 	TArray<FChannelSetup> ChannelSetup = {FChannelSetup(1)};
 
-	struct FPoolDeleter : public TDefaultDelete<class FSenseDetectPool>
-	{
-		void operator()(FSenseDetectPool* Ptr) const;
-		template<typename U>
-		FPoolDeleter& operator=(const TDefaultDelete<U>&)
-		{
-			return *this;
-		}
-		template<typename U>
-		FPoolDeleter(const TDefaultDelete<U>&)
-		{}
-	};
-	TArray<TUniquePtr<FSenseDetectPool, FPoolDeleter>> ChannelPool;
 
 	UPROPERTY()
 	FBitFlag64_SenseSys BitChannels = FBitFlag64_SenseSys(1);
@@ -435,6 +449,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor", meta = (Keywords = "Set Timer Update Time Rate"))
 	void SetUpdateTimeRate(float NewUpdateTimeRate);
 
+	/********************************/
+	/*			SensorTests			*/
+	/********************************/
+
 #if WITH_EDITORONLY_DATA
 	UPROPERTY(VisibleAnywhere, Category = "SensorHide", Transient)
 	bool bOuter = true;
@@ -442,8 +460,7 @@ public:
 
 	/** Current test for sensing */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "SensorTests", meta = (EditCondition = bOuter))
-	TArray<USensorTestBase*> SensorTests; //todo Instanced Array?
-
+	TArray<TObjectPtr<USensorTestBase>> SensorTests;
 	/** CreateNewSensorTest */
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor", meta = (DeterminesOutputType = "SensorTestClass", Keywords = "Create Add New Sensor Test"))
 	USensorTestBase* CreateNewSensorTest(TSubclassOf<USensorTestBase> SensorTestClass, int32 SensorTestIndexPlace = 0);
@@ -453,6 +470,10 @@ public:
 		Category = "SenseSystem|Sensor",
 		meta = (DeterminesOutputType = "SensorTestClass", Keywords = "Destroy Remove Delete Sensor Test"))
 	bool DestroySensorTest(TSubclassOf<USensorTestBase> SensorTestClass, int32 SensorTestIndexPlace = 0);
+
+	/********************************/
+	/*			IgnoredActors		*/
+	/********************************/
 
 	/** Ignored Actors for this Sensor*/
 	UPROPERTY(BlueprintReadOnly, Category = "Sensor")
@@ -489,6 +510,7 @@ public:
 
 	void RemoveNullsIgnoreActorsAndComponents();
 
+	/********************************/
 
 	/** SenseManager */
 	USenseManager* GetSenseManager() const;
@@ -525,7 +547,13 @@ public:
 	EUpdateReady GetSensorReadyBP();
 	virtual EUpdateReady GetSensorReadyBP_Implementation();
 
+
 public:
+	/********************************/
+	/*			SensedArrays		*/
+	/*  Thread Safe for public read */
+	/********************************/
+
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor")
 	void ClearCurrentSense(bool bCallUpdate = true);
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor")
@@ -533,6 +561,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor")
 	void ForgetAllSensed();
 
+	/********************************/
 
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "SenseSystem|Sensor", meta = (Keywords = "Find Get Best Score Sensed Sense"))
 	TArray<FSensedStimulus> FindBestScoreSensed(uint8 InChannel = 1, int32 Count = 1) const;
@@ -540,6 +569,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "SenseSystem|Sensor", meta = (Keywords = "Find Get Best Age Score Sensed Sense"))
 	TArray<FSensedStimulus> FindBestAgeSensed(uint8 InChannel = 1, int32 Count = 1) const;
 
+	/********************************/
 
 	/** Get best sensed SenseStimulusComponent */
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor", meta = (Keywords = "Get Best SenseStimulus Sense Stimulus"))
@@ -552,9 +582,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|Sensor", meta = (Keywords = "Get Best Actor Component"))
 	class AActor* GetBestSenseActor(uint8 Channel = 1) const;
 
+	/********************************/
 
-	const TArray<FSensedStimulus>* GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent, int32 ChannelID) const;
-	const TArray<FSensedStimulus>* GetSensedStimulusBySenseEvent(EOnSenseEvent SenseEvent, int32 ChannelID) const;
+	const TArray<FSensedStimulus>& GetSensedStimulusBySenseEvent(ESensorArrayByType SenseEvent, int32 ChannelID) const;
+	const TArray<FSensedStimulus>& GetSensedStimulusBySenseEvent(EOnSenseEvent SenseEvent, int32 ChannelID) const;
 
 	UFUNCTION(
 		BlueprintCallable,
@@ -637,9 +668,16 @@ public:
 	bool GetActorLocationFromMemory_ByActor(const AActor* Actor, FVector& Location, uint8 InChannel = 1) const;
 
 
+	/********************************/
+	/*			NewAndLost			*/
+	/********************************/
+
 	bool IsDetect(EOnSenseEvent InDetectDepth) const;
 	bool IsCallOnSense(EOnSenseEvent SenseEvent) const;
 
+	/********************************/
+	/*			SensorTime			*/
+	/********************************/
 
 	/** For tick Age timer called from Receiver tick */
 	virtual void TickSensor(float DeltaTime);
@@ -648,16 +686,21 @@ protected:
 	virtual bool NeedStopTimer();
 	virtual bool NeedContinueTimer();
 
+	/********************************/
+
 public:
 	/** UnRegister SenseStimulus called from sense manager*/
 	virtual TArray<FStimulusFindResult> UnRegisterSenseStimulus(USenseStimulusBase* Ssc);
+
+
+	/********************************/
 
 	/** Not Thread Safe Main Sensor work implementation */
 	virtual bool UpdateSensor();
 
 	/**  */
 	virtual void ReportSenseStimulusEvent(USenseStimulusBase* SenseStimulus);
-	virtual void ReportSenseStimulusEvent(ElementIndexType InStimulusID);
+	virtual void ReportSenseStimulusEvent(uint16 InStimulusID);
 
 	/** check ready for sense tests */
 	bool IsValidForTest() const;
@@ -670,10 +713,14 @@ public:
 protected:
 	void OnSensorUpdateReceiver(EOnSenseEvent SenseEvent, const FChannelSetup& InChannelSetup) const;
 
+	/********************************/
+
 	virtual bool RunSensorTest();
 
 	/** Detect Age for lost sensed */
 	virtual void DetectionLostAndForgetUpdate();
+
+	/********************************/
 
 	/**Not Thread Safe PreUpdate */
 	virtual bool PreUpdateSensor();
@@ -685,6 +732,8 @@ protected:
 	virtual void OnSensorUpdated();
 	virtual void OnAgeUpdated();
 
+	/********************************/
+
 	virtual void TrySensorUpdate();
 
 	virtual EUpdateReady GetSensorReady();
@@ -693,17 +742,19 @@ protected:
 	virtual void OnSensorReadySkip();
 	virtual void OnSensorReadyFail();
 
+	/********************************/
+
 private:
 	/** Collect specify tested SensedStimulus */
 	template<typename ConType>
 	bool SensorsTestForSpecifyComponents_V3(const IContainerTree* ContainerTree, ConType&& ObjIDs) const;
 	float UpdtDetectPoolAndReturnMinScore() const;
 	bool UpdtSensorTestForIDInternal(
-		ElementIndexType Idx,
+		uint16 Idx,
 		const IContainerTree* ContainerTree,
 		const float CurrentTime,
 		const float MinScore,
-		TArray<ElementIndexType>& ChannelContainsIDs) const;
+		TArray<uint16>& ChannelContainsIDs) const;
 
 public:
 	/** Check Async Sensor Task IsWorkDone */
@@ -715,8 +766,8 @@ public:
 	void ResetInitialization();
 
 private:
-	ESenseTestResult Sensor_Run_Test(float MinScore, const float CurrentTime, FSensedStimulus& Stimulus, TArray<ElementIndexType>& Out) const;
-	void CheckWithCurrent(FSensedStimulus& SS, TArray<ElementIndexType>& Out) const;
+	ESenseTestResult Sensor_Run_Test(float MinScore, const float CurrentTime, FSensedStimulus& Stimulus, TArray<uint16>& Out) const;
+	void CheckWithCurrent(FSensedStimulus& SS, TArray<uint16>& Out) const;
 
 
 	// NotUProperty
@@ -738,7 +789,7 @@ private:
 	static bool IsZeroBox(const FBox& InBox);
 
 protected:
-	TMap<ElementIndexType, uint32> PendingUpdate;
+	TMap<uint16, uint32> PendingUpdate;
 	FThreadSafeBool bIsHavePendingUpdate;
 
 	virtual float GetCurrentGameTimeInSeconds() const;
@@ -768,7 +819,7 @@ bool USensorBase::SensorsTestForSpecifyComponents_V3(const IContainerTree* Conta
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_NewSensed);
 
 	const float CurrentTime = GetCurrentGameTimeInSeconds(); //once per update need CurrentGameTime
-	if (UNLIKELY(CurrentTime == 0.0))
+	if (UNLIKELY(CurrentTime == 0.f))
 	{
 		return false;
 	}
@@ -776,10 +827,10 @@ bool USensorBase::SensorsTestForSpecifyComponents_V3(const IContainerTree* Conta
 	if (LIKELY(SensorTests.Num() != 0))
 	{
 		const float MinScore = UpdtDetectPoolAndReturnMinScore();
-		TArray<ElementIndexType> ChannelContainsIDs;
+		TArray<uint16> ChannelContainsIDs;
 		ChannelContainsIDs.Reserve(ChannelSetup.Num());
 
-		for (const ElementIndexType ItID : ObjIDs)
+		for (const uint16 ItID : ObjIDs)
 		{
 			if (UpdtSensorTestForIDInternal(ItID, ContainerTree, CurrentTime, MinScore, ChannelContainsIDs))
 			{
@@ -823,7 +874,7 @@ FORCEINLINE bool USensorBase::IsValidForTest_Short() const
 }
 FORCEINLINE bool USensorBase::IsValidForTest() const
 {
-	return IsValidForTest_Short() && IsValid(this) && ChannelSetup.Num() != 0;
+	return IsValidForTest_Short() && IsValid(this) && ChannelSetup.Num() != 0; /*&& SensorTests.Num() != 0*/
 }
 
 FORCEINLINE USenseManager* USensorBase::GetSenseManager() const
@@ -847,6 +898,8 @@ FORCEINLINE const FTransform& USensorBase::GetSensorTransform() const
 
 FORCEINLINE bool USensorBase::NeedStopTimer()
 {
+	//return !(IsDetect(EOnSenseEvent::SenseForget) && SenseDetect.LostAll_Sensed.Num()) || SensorTimer.UpdateTimeRate == 0;
+	//(SenseDetect.LostAll_Sensed.Num() == 0 && SenseDetect.Current_Sensed.Num() == 0) || SensorTimer.UpdateTimeRate == 0;
 	return !NeedContinueTimer();
 }
 
@@ -892,13 +945,13 @@ FORCEINLINE bool USensorBase::IsSensorTaskWorkDone() const
 }
 
 
-FORCEINLINE const TArray<FSensedStimulus>* USensorBase::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent, const int32 ChannelID) const
+FORCEINLINE const TArray<FSensedStimulus>& USensorBase::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent, const int32 ChannelID) const
 {
 	check(ChannelSetup.IsValidIndex(ChannelID));
 	return ChannelSetup[ChannelID].GetSensedStimulusBySenseEvent(SenseEvent);
 }
 
-FORCEINLINE const TArray<FSensedStimulus>* USensorBase::GetSensedStimulusBySenseEvent(const EOnSenseEvent SenseEvent, const int32 ChannelID) const
+FORCEINLINE const TArray<FSensedStimulus>& USensorBase::GetSensedStimulusBySenseEvent(const EOnSenseEvent SenseEvent, const int32 ChannelID) const
 {
 	check(ChannelSetup.IsValidIndex(ChannelID));
 	return ChannelSetup[ChannelID].GetSensedStimulusBySenseEvent(SenseEvent);
@@ -960,41 +1013,46 @@ FORCEINLINE FChannelSetup& FChannelSetup::operator=(const FChannelSetup& Other)
 	return *this;
 }
 
-FORCEINLINE const TArray<FSensedStimulus>* FChannelSetup::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent) const
+FORCEINLINE const TArray<FSensedStimulus>& FChannelSetup::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent) const
 {
 	switch (SenseEvent)
 	{
-		case ESensorArrayByType::SensedNew: return &NewSensed;
-		case ESensorArrayByType::SenseCurrent: return &CurrentSensed;
-		case ESensorArrayByType::SenseCurrentLost: return &LostCurrentSensed;
-		case ESensorArrayByType::SenseForget: return &ForgetSensed;
-		case ESensorArrayByType::SenseLost: return &LostAllSensed;
+		case ESensorArrayByType::SensedNew: return NewSensed;
+		case ESensorArrayByType::SenseCurrent: return CurrentSensed;
+		case ESensorArrayByType::SenseCurrentLost: return LostCurrentSensed;
+		case ESensorArrayByType::SenseForget: return ForgetSensed;
+		case ESensorArrayByType::SenseLost: return LostAllSensed;
 	}
-	return nullptr;
+	checkNoEntry();
+	return CurrentSensed;
 }
-FORCEINLINE TArray<FSensedStimulus>* FChannelSetup::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent)
+FORCEINLINE TArray<FSensedStimulus>& FChannelSetup::GetSensedStimulusBySenseEvent(const ESensorArrayByType SenseEvent)
 {
 	switch (SenseEvent)
 	{
-		case ESensorArrayByType::SensedNew: return &NewSensed;
-		case ESensorArrayByType::SenseCurrent: return &CurrentSensed;
-		case ESensorArrayByType::SenseCurrentLost: return &LostCurrentSensed;
-		case ESensorArrayByType::SenseForget: return &ForgetSensed;
-		case ESensorArrayByType::SenseLost: return &LostAllSensed;
+	case ESensorArrayByType::SensedNew: return NewSensed;
+	case ESensorArrayByType::SenseCurrent: return CurrentSensed;
+	case ESensorArrayByType::SenseCurrentLost: return LostCurrentSensed;
+	case ESensorArrayByType::SenseForget: return ForgetSensed;
+	case ESensorArrayByType::SenseLost: return LostAllSensed;
+	default:
+		checkNoEntry();
+		return CurrentSensed;
 	}
-	return nullptr;
 }
 
-FORCEINLINE const TArray<FSensedStimulus>* FChannelSetup::GetSensedStimulusBySenseEvent(const EOnSenseEvent SenseEvent) const
+FORCEINLINE const TArray<FSensedStimulus>& FChannelSetup::GetSensedStimulusBySenseEvent(const EOnSenseEvent SenseEvent) const
 {
 	switch (SenseEvent)
 	{
-		case EOnSenseEvent::SenseNew: return &NewSensed;
-		case EOnSenseEvent::SenseCurrent: return &CurrentSensed;
-		case EOnSenseEvent::SenseLost: return &LostCurrentSensed;
-		case EOnSenseEvent::SenseForget: return &ForgetSensed;
+	case EOnSenseEvent::SenseNew: return NewSensed;
+	case EOnSenseEvent::SenseCurrent: return CurrentSensed;
+	case EOnSenseEvent::SenseLost: return LostCurrentSensed;
+	case EOnSenseEvent::SenseForget: return ForgetSensed;
+	default:
+		checkNoEntry();
+		return CurrentSensed; // Moved return here to handle unexpected cases
 	}
-	return nullptr;
 }
 
 FORCEINLINE const FSensedStimulus* FChannelSetup::GetBestSenseStimulus() const
@@ -1015,5 +1073,28 @@ FORCEINLINE bool USensorBase::IsCallOnSense(const EOnSenseEvent SenseEvent) cons
 		case EOnSenseEvent::SenseLost: return CallStimulusFlag & static_cast<uint8>(ECallStimulusFlag::CallOnLost);
 		case EOnSenseEvent::SenseForget: return CallStimulusFlag & static_cast<uint8>(ECallStimulusFlag::CallOnForget);
 	}
+	checkNoEntry();
 	return false;
 }
+
+//FORCEINLINE bool USensorBase::CheckResponseChannel(const FSensedStimulus& Stimulus) const
+//{
+//	return BitChannels & Stimulus.BitChannels & ~IgnoreBitChannels;
+//}
+//FORCEINLINE bool USensorBase::CheckResponseChannel(const FSensedStimulus* Stimulus) const
+//{
+//	if (Stimulus) return CheckResponseChannel(*Stimulus);
+//	return false;
+//}
+//FORCEINLINE bool USensorBase::ContainsIgnoreChannel(const uint8 InChannel) const
+//{
+//	return IgnoreBitChannels & (1llu << (InChannel - 1));
+//}
+//FORCEINLINE bool USensorBase::ContainsSenseChannel(const uint8 InChannel) const
+//{
+//	return BitChannels & (1llu << (InChannel - 1));
+//}
+//FORCEINLINE bool USensorBase::CheckChannel(const uint8 InChannel)const
+//{
+//	return BitChannels & (1llu << (InChannel - 1)) & ~IgnoreBitChannels);
+//}

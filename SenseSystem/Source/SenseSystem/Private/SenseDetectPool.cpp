@@ -6,17 +6,13 @@
 #include "HashSorted.h"
 #include "SenseStimulusBase.h"
 
-using ElementIndexType = FSenseSystemModule::ElementIndexType;
 
 struct FSortIDPredicate
 {
-	using HashValueType = uint32;
-
 	explicit FSortIDPredicate(const TSparseArray<FSensedStimulus>& InPoolRef) : PoolRef(InPoolRef) {}
-
-	FORCEINLINE bool operator()(const ElementIndexType A, const ElementIndexType B) const { return PoolRef[A].TmpHash < PoolRef[B].TmpHash; }
-	FORCEINLINE bool operator()(const HashValueType A, const ElementIndexType B) const { return A < PoolRef[B].TmpHash; }
-	FORCEINLINE bool operator()(const ElementIndexType A, const HashValueType B) const { return PoolRef[A].TmpHash < B; }
+	FORCEINLINE bool operator()(const uint16 A, const uint16 B) const { return PoolRef[A].TmpHash < PoolRef[B].TmpHash; }
+	FORCEINLINE bool operator()(const uint32 A, const uint16 B) const { return A < PoolRef[B].TmpHash; }
+	FORCEINLINE bool operator()(const uint16 A, const uint32 B) const { return PoolRef[A].TmpHash < B; }
 
 private:
 	const TSparseArray<FSensedStimulus>& PoolRef;
@@ -24,7 +20,7 @@ private:
 
 struct FSortScorePredicate
 {
-	explicit FSortScorePredicate(const TSparseArray<FSensedStimulus>& InPoolRef, const TArray<ElementIndexType>& NewCurrentSensed)
+	explicit FSortScorePredicate(const TSparseArray<FSensedStimulus>& InPoolRef, const TArray<uint16>& NewCurrentSensed)
 		: PoolRef(InPoolRef)
 		, Arr(NewCurrentSensed)
 	{}
@@ -32,12 +28,12 @@ struct FSortScorePredicate
 
 private:
 	const TSparseArray<FSensedStimulus>& PoolRef;
-	const TArray<ElementIndexType>& Arr;
+	const TArray<uint16>& Arr;
 };
 
 struct FSortHashScorePredicate
 {
-	explicit FSortHashScorePredicate(const TSparseArray<FSensedStimulus>& InPoolRef, const TArray<ElementIndexType>& NewCurrentSensed)
+	explicit FSortHashScorePredicate(const TSparseArray<FSensedStimulus>& InPoolRef, const TArray<uint16>& NewCurrentSensed)
 		: PoolRef(InPoolRef)
 		, Arr(NewCurrentSensed)
 	{}
@@ -45,7 +41,7 @@ struct FSortHashScorePredicate
 
 private:
 	const TSparseArray<FSensedStimulus>& PoolRef;
-	const TArray<ElementIndexType>& Arr;
+	const TArray<uint16>& Arr;
 };
 
 /********/
@@ -54,14 +50,14 @@ struct FValidPoolIdx
 {
 	explicit FValidPoolIdx(const TSparseArray<FSensedStimulus>& In) : PoolRef(In) {}
 	const TSparseArray<FSensedStimulus>& PoolRef;
-	FORCEINLINE bool operator()(const ElementIndexType ElemID) const { return !PoolRef[ElemID].StimulusComponent.IsValid(); }
+	FORCEINLINE bool operator()(const uint16 ElemID) const { return !PoolRef[ElemID].StimulusComponent.IsValid(); }
 };
 
 struct FInvalidRemoveIdx
 {
 	explicit FInvalidRemoveIdx(TSparseArray<FSensedStimulus>& In) : PoolRef(In) {}
 	TSparseArray<FSensedStimulus>& PoolRef;
-	FORCEINLINE bool operator()(const ElementIndexType ElemID) const
+	FORCEINLINE bool operator()(const uint16 ElemID) const
 	{
 		if (!PoolRef[ElemID].StimulusComponent.IsValid())
 		{
@@ -75,28 +71,28 @@ struct FInvalidRemoveIdx
 /********/
 
 
-ElementIndexType FSenseDetectPool::ContainsIn(const FSensedStimulus& InElem, const TArray<ElementIndexType>& InArr) const
+uint16 FSenseDetectPool::ContainsIn(const FSensedStimulus& InElem, const TArray<uint16>& InArr) const
 {
 	if (InArr.Num() && InElem.TmpHash != MAX_uint32)
 	{
 		const int32 Idx = Algo::BinarySearch(InArr, InElem.TmpHash, FSortIDPredicate(ObjPool));
 		if (Idx != INDEX_NONE)
 		{
-			const ElementIndexType F = InArr[Idx];
+			const uint16 F = InArr[Idx];
 			if (ObjPool[F].TmpHash == InElem.TmpHash)
 			{
 				return F;
 			}
 		}
 	}
-	return TNumericLimits<ElementIndexType>::Max();
+	return MAX_uint16;
 }
 
-TArray<FSensedStimulus> FSenseDetectPool::GetArray_Copy(const TArray<ElementIndexType>& Arr) const
+TArray<FSensedStimulus> FSenseDetectPool::GetArray_Copy(const TArray<uint16>& Arr) const
 {
 	TArray<FSensedStimulus> Out;
 	Out.Reserve(Arr.Num());
-	for (const ElementIndexType It : Arr)
+	for (const uint16 It : Arr)
 	{
 		const FSensedStimulus& Elem = ObjPool[It];
 		if (Elem.TmpHash != MAX_uint32)
@@ -122,19 +118,7 @@ void FSenseDetectPool::NewSensedUpdate(const EOnSenseEvent Ost, const bool bOver
 }
 
 
-bool FSenseDetectPool::LostIndex(const ElementIndexType ID)
-{
-	const int32 Idx = Algo::BinarySearch(Current, ID);
-	if (Idx != INDEX_NONE)
-	{
-		NewCurrent = Current;
-		NewCurrent.RemoveAt(Idx);
-		return true;
-	}
-	return false;
-}
-
-void FSenseDetectPool::BestScoreUpdt(TArray<ElementIndexType>& InArr, const bool bNewSenseForcedByBestScore)
+void FSenseDetectPool::BestScoreUpdt(TArray<uint16>& InArr, const bool bNewSenseForcedByBestScore)
 {
 
 #if WITH_EDITOR //todo remove this
@@ -165,7 +149,7 @@ void FSenseDetectPool::BestScoreUpdt(TArray<ElementIndexType>& InArr, const bool
 		}
 		if (InArr.Num() > BestScore.Num())
 		{
-			InArr.RemoveAt(BestScore.Num(), InArr.Num() - BestScore.Num(), EAllowShrinking::Yes); // cut Arr by IDs Num
+			InArr.RemoveAt(BestScore.Num(), InArr.Num() - BestScore.Num(), true); // cut Arr by IDs Num
 		}
 		Algo::Sort(BestScore, FSortScorePredicate(ObjPool, InArr)); //sort back to score
 	}
@@ -180,11 +164,15 @@ void FSenseDetectPool::NewSensed(const EOnSenseEvent Ost, const bool bNewSenseFo
 	{
 		Algo::Sort(DetectNew, SortPred);
 
+		FPlatformMisc::MemoryBarrier();
+
 		NewCurrent = DetectNew;
 		NewCurrent.Append(DetectCurrent);
 		Algo::Sort(NewCurrent, SortPred);
 
 		BestScoreUpdt(NewCurrent, bNewSenseForcedByBestScore);
+
+		FPlatformMisc::MemoryBarrier();
 
 		ArraySorted::ArrayMinusArray_SortedPredicate(DetectNew, NewCurrent, SortPred);
 
@@ -192,7 +180,7 @@ void FSenseDetectPool::NewSensed(const EOnSenseEvent Ost, const bool bNewSenseFo
 		DetectCurrent.Empty();
 	}
 
-	TArray<ElementIndexType> TmpNewCurrentSensed = NewCurrent;
+	TArray<uint16> TmpNewCurrentSensed = NewCurrent;
 
 	if (Ost >= EOnSenseEvent::SenseNew)
 	{
@@ -241,7 +229,7 @@ void FSenseDetectPool::AddSensed(const EOnSenseEvent Ost, const bool bNewSenseFo
 	const auto SortPred = FSortIDPredicate(ObjPool);
 	Algo::Sort(DetectNew, SortPred);
 
-	TArray<ElementIndexType> TmpNewCurrentSensed = DetectNew;
+	TArray<uint16> TmpNewCurrentSensed = DetectNew;
 	TmpNewCurrentSensed.Append(DetectCurrent);
 	DetectCurrent.Empty();
 	Algo::Sort(TmpNewCurrentSensed, SortPred);
@@ -332,7 +320,7 @@ void FSenseDetectPool::EmptyUpdate(const EOnSenseEvent Ost, const bool bOverride
 		}
 
 		{
-			TArray<ElementIndexType> TmpNewCurrentSensed = Current;
+			TArray<uint16> TmpNewCurrentSensed = Current;
 			BestScoreUpdt(TmpNewCurrentSensed, false);
 			if (Current.Num() != TmpNewCurrentSensed.Num())
 			{
@@ -351,7 +339,7 @@ void FSenseDetectPool::NewAgeUpdate(const float CurrentTime, const EOnSenseEvent
 	{
 		if (Lost.Num())
 		{
-			TArray<ElementIndexType> Rem;
+			TArray<uint16> Rem;
 			Rem.Reserve(Lost.Num());
 			const int32 LostNum = Lost.Num();
 			int32 r = -1;
@@ -380,7 +368,7 @@ void FSenseDetectPool::NewAgeUpdate(const float CurrentTime, const EOnSenseEvent
 			r++;
 			if (r < Lost.Num())
 			{
-				Lost.RemoveAt(r, Lost.Num() - r, EAllowShrinking::Yes);
+				Lost.RemoveAt(r, Lost.Num() - r, true);
 			}
 			ArraySorted::ArrayMinusArray_SortedPredicate(LostCurrent, Rem, FSortIDPredicate(GetPool()));
 			EmptyArr(MoveTemp(Rem));

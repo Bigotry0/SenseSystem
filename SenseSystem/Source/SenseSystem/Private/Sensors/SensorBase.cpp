@@ -35,7 +35,26 @@
 	#include "Misc/DataValidation.h"
 #endif
 
-using ElementIndexType = FSenseSystemModule::ElementIndexType;
+
+struct FNotValidObjPredicate
+{
+	FORCEINLINE bool operator()(const UObject* Obj) const { return !IsValid(Obj); }
+};
+struct FValidObjPredicate
+{
+	FORCEINLINE bool operator()(const UObject* Obj) const { return IsValid(Obj); }
+};
+
+
+//struct FFindScoreIDByScorePredicate
+//{
+//	explicit FFindScoreIDByScorePredicate(const TArray<FSensedStimulus>& InPoolRef) : PoolRef(InPoolRef) {}
+//	FORCEINLINE bool operator()(const int32 A, const float B) const { return PoolRef[A].Score > B; };
+//	FORCEINLINE bool operator()(const float A, const int32 B) const { return A > PoolRef[B].Score; };
+//
+//private:
+//	const TArray<FSensedStimulus>& PoolRef;
+//};
 
 struct FSortScorePredicate2
 {
@@ -66,12 +85,15 @@ FChannelSetup::FChannelSetup(const FChannelSetup& In)
 {
 	*this = In;
 }
+void FChannelSetup::FDeleterSdp::operator()(FSenseDetectPool* Ptr) const
+{
+	delete Ptr;
+}
 FChannelSetup::~FChannelSetup()
 {}
-void FChannelSetup::Init(FSenseDetectPool* PoolPtr)
+void FChannelSetup::Init()
 {
-	check(PoolPtr);
-	_SenseDetect = PoolPtr;
+	_SenseDetect = MakeUnique<FSenseDetectPool>();
 	_SenseDetect->Best_Sense.TrackBestScoreCount = FMath::Max(0, TrackBestScoreCount);
 	_SenseDetect->Best_Sense.MinBestScore = MinBestScore;
 }
@@ -117,37 +139,6 @@ void FChannelSetup::OnSensorAgeUpdated(const ESensorType InSensorType, const EUp
 		LostCurrentSensed = SenseDetectRef.GetArrayCopy_SenseEvent(ESensorArrayByType::SenseCurrentLost);
 	}
 }
-void FChannelSetup::NewSensedUpdate(EOnSenseEvent Ost, bool bOverrideSenseState, bool bNewSensForcedByBestScore) const
-{
-	check(_SenseDetect);
-	_SenseDetect->NewSensedUpdate(Ost, bOverrideSenseState, bNewSensForcedByBestScore);
-}
-void FChannelSetup::EmptyUpdate(EOnSenseEvent Ost, bool bOverrideSenseState) const
-{
-	check(_SenseDetect);
-	_SenseDetect->EmptyUpdate(Ost, bOverrideSenseState);
-}
-void FChannelSetup::NewAgeUpdate(const float CurrentTime, const EOnSenseEvent Ost) const
-{
-	check(_SenseDetect);
-	_SenseDetect->NewAgeUpdate(CurrentTime, Ost);
-}
-ElementIndexType FChannelSetup::ContainsInCurrentSense(const FSensedStimulus& InElem) const
-{
-	check(_SenseDetect);
-	return _SenseDetect->ContainsInCurrentSense(InElem);
-}
-ElementIndexType FChannelSetup::ContainsInLostSense(const FSensedStimulus& InElem) const
-{
-	check(_SenseDetect);
-	return _SenseDetect->ContainsInLostSense(InElem);
-}
-void FChannelSetup::Add(const float CurrentTime, FSensedStimulus&& SS, const ElementIndexType ID) const
-{
-	check(_SenseDetect);
-	_SenseDetect->Add(CurrentTime, MoveTemp(SS), ID);
-}
-
 
 
 USensorBase::USensorBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
@@ -185,9 +176,6 @@ USensorBase::USensorBase(const FObjectInitializer& ObjectInitializer) : Super(Ob
 	//	if(GEditor) GEditor->OnBlueprintPreCompile().AddUObject(this, &USensorBase::OnPreCompile);
 	//#endif
 }
-USensorBase::USensorBase() = default;
-USensorBase::USensorBase(FVTableHelper& Helper)
-{}
 
 USensorBase::~USensorBase()
 {}
@@ -248,7 +236,6 @@ void USensorBase::BeginDestroy()
 {
 	ResetInitialization();
 	DestroyUpdateSensorTask();
-	ChannelPool.Empty();
 	Super::BeginDestroy();
 }
 
@@ -285,53 +272,61 @@ bool USensorBase::UpdateSensor()
 		if (UNLIKELY(!bPreValidation)) return false;
 	}
 
-	this->UpdateState = ESensorState::Update;
+	{
+		//FScopeLock Lock_CriticalSection(&SensorCriticalSection);
+		this->UpdateState = ESensorState::Update;
+	}
 
 	if (GetSensorUpdateReady() == EUpdateReady::Ready)
 	{
 		if (SensorType == ESensorType::Passive)
 		{
-			if (bIsHavePendingUpdate && PreUpdateSensor())
+			if (bIsHavePendingUpdate && GetSenseManager() && PreUpdateSensor())
 			{
-				const auto ContainerTree = GetSenseManager()->GetNamedContainerTree(SensorTag);
-				if (ContainerTree && bIsHavePendingUpdate && SensorTests.Num() != 0)
+				if (const auto ContainerTree = GetSenseManager()->GetNamedContainerTree(SensorTag))
 				{
-					TArray<ElementIndexType> OutIDs;
+					if (bIsHavePendingUpdate && SensorTests.Num() != 0)
 					{
-						FScopeLock Lock_CriticalSection(&SensorCriticalSection);
-						OutIDs = ContainerTree->CheckHash_TS(this->PendingUpdate);
-						this->PendingUpdate.Empty();
+						TArray<uint16> OutIDs;
+						{
+							FScopeLock Lock_CriticalSection(&SensorCriticalSection);
+							OutIDs = ContainerTree->CheckHash_TS(this->PendingUpdate);
+							this->PendingUpdate.Empty();
+						}
+						bIsHavePendingUpdate = false;
+
+
+						ContainerTree->MarkRemoveControl();
+
+						const bool bRes = SensorsTestForSpecifyComponents_V3(ContainerTree, MoveTemp(OutIDs));
+
+						if (ContainerTree) ContainerTree->ResetRemoveControl();
+
+
+						//UpdateState = ESensorState::TestUpdated;
+						if (bRes)
+						{
+							for (const FChannelSetup& Ch : ChannelSetup)
+							{
+								Ch._SenseDetect->NewSensedUpdate(DetectDepth, true, Ch.bNewSenseForcedByBestScore);
+							}
+						}
 					}
-					bIsHavePendingUpdate = false;
-
-					ContainerTree->MarkRemoveControl();
-
-					const bool bRes = SensorsTestForSpecifyComponents_V3(ContainerTree, MoveTemp(OutIDs));
-
-					if (ContainerTree) 
-						ContainerTree->ResetRemoveControl();
-
-					if (bRes)
+					else
 					{
 						for (const FChannelSetup& Ch : ChannelSetup)
 						{
-							Ch.NewSensedUpdate(DetectDepth, true, Ch.bNewSenseForcedByBestScore);
+							Ch._SenseDetect->EmptyUpdate(DetectDepth, true);
 						}
-					}
-				}
-				else
-				{
-					for (const FChannelSetup& Ch : ChannelSetup)
-					{
-						Ch.EmptyUpdate(DetectDepth, true);
 					}
 				}
 			}
 			else
 			{
+				//UpdateState = ESensorState::TestUpdated;
 				for (const FChannelSetup& Ch : ChannelSetup)
 				{
-					Ch.EmptyUpdate(DetectDepth, true);
+					Ch._SenseDetect->EmptyUpdate(DetectDepth, true);
 				}
 			}
 		}
@@ -569,11 +564,9 @@ void USensorBase::InitializeForSense(USenseReceiverComponent* FromReceiver)
 
 		if (GetSenseManager() != nullptr)
 		{
-			ChannelPool.Reset(ChannelSetup.Num());
-			for (int32 i = 0; i < ChannelSetup.Num(); i++)
+			for (FChannelSetup& It : ChannelSetup)
 			{
-				ChannelPool.Add(MakeUnique<FSenseDetectPool>());
-				ChannelSetup[i].Init(ChannelPool[i].Get());
+				It.Init();
 			}
 			UpdateState = ESensorState::NotUpdate;
 		}
@@ -609,7 +602,6 @@ void USensorBase::Cleanup()
 	if (UpdateState.Get() < ESensorState::Update) //force clean
 	{
 		SensorTests.Empty();
-		ChannelPool.Empty();
 		//ChannelSetup.Empty(); //todo ChannelSetup.Empty() On USensorBase::Cleanup(
 
 		Ignored_Components.Empty();
@@ -867,10 +859,10 @@ void USensorBase::ResetIgnoredActors()
 
 void USensorBase::RemoveNullsIgnoreActorsAndComponents()
 {
-	ArrayHelpers::Filter_Sorted_V2(Ignored_Actors,[](const UObject* Obj){ return !IsValid(Obj); });
+	ArrayHelpers::Filter_Sorted_V2(Ignored_Actors, FNotValidObjPredicate());
 #if WITH_EDITOR
 	checkf(
-		!ArrayHelpers::Filter_Sorted_V2(Ignored_Components, [](const UObject* Obj){ return !IsValid(Obj); }),
+		!ArrayHelpers::Filter_Sorted_V2(Ignored_Components, FNotValidObjPredicate()),
 		TEXT("dont need refresh Ignored_Components with Unregister Stimulus function"));
 #endif
 }
@@ -887,15 +879,15 @@ TArray<FStimulusFindResult> USensorBase::UnRegisterSenseStimulus(USenseStimulusB
 		{
 			if ((BitChannels.Value & StrPtr->BitChannels.Value & ~IgnoreBitChannels.Value))
 			{
-				const ElementIndexType InStimulusID = StrPtr->GetObjID();
-				if (InStimulusID != TNumericLimits<ElementIndexType>::Max())
+				const uint16 InStimulusID = StrPtr->GetObjID();
+				if (InStimulusID != MAX_uint16)
 				{
 					FScopeLock Lock_CriticalSection(&SensorCriticalSection);
 					this->PendingUpdate.Remove(InStimulusID);
 				}
 
 				TArray<FStimulusFindResult> FindResult = FindStimulusInAllState(Ssc, *StrPtr, BitChannels);
-				for (int32 i = 0; i < FindResult.Num(); i++)
+				for (int32 i = 0; i < FindResult.Num(); ++i)
 				{
 					FStimulusFindResult& It = FindResult[i];
 					const int32 ChanIdx = It.Sensor->GetChannelID(It.Channel);
@@ -911,13 +903,13 @@ TArray<FStimulusFindResult> USensorBase::UnRegisterSenseStimulus(USenseStimulusB
 							checkSlow(FindIndex == Ch.BestSensedID_ByScore.IndexOfByKey(It.SensedID));
 							if (FindIndex != INDEX_NONE)
 							{
-								Ch.BestSensedID_ByScore.RemoveAt(FindIndex, 1, EAllowShrinking::No);
+								Ch.BestSensedID_ByScore.RemoveAt(FindIndex, 1, false);
 							}
 							for (int32& BestIt : Ch.BestSensedID_ByScore)
 							{
 								if (BestIt > It.SensedID)
 								{
-									BestIt--;
+									--BestIt;
 								}
 							}
 						}
@@ -935,8 +927,8 @@ TArray<FStimulusFindResult> USensorBase::UnRegisterSenseStimulus(USenseStimulusB
 						}
 					}
 
-					TArray<FSensedStimulus>* Array = Ch.GetSensedStimulusBySenseEvent(It.SensedType);
-					Array->RemoveAt(It.SensedID, 1, EAllowShrinking::No);
+					TArray<FSensedStimulus>& Array = Ch.GetSensedStimulusBySenseEvent(It.SensedType);
+					Array.RemoveAt(It.SensedID, 1, false);
 #if WITH_EDITOR
 					for (const int32 BestIt : Ch.BestSensedID_ByScore)
 					{
@@ -964,8 +956,8 @@ void USensorBase::ReportSenseStimulusEvent(USenseStimulusBase* SenseStimulus)
 	{
 		if (const FStimulusTagResponse* StrPtr = SenseStimulus->GetStimulusTagResponse(SensorTag))
 		{
-			const ElementIndexType InStimulusID = StrPtr->GetObjID();
-			if (InStimulusID != TNumericLimits<ElementIndexType>::Max())
+			const uint16 InStimulusID = StrPtr->GetObjID();
+			if (InStimulusID != MAX_uint16)
 			{
 				ReportSenseStimulusEvent(InStimulusID);
 			}
@@ -973,9 +965,9 @@ void USensorBase::ReportSenseStimulusEvent(USenseStimulusBase* SenseStimulus)
 	}
 }
 
-void USensorBase::ReportSenseStimulusEvent(const ElementIndexType InStimulusID)
+void USensorBase::ReportSenseStimulusEvent(const uint16 InStimulusID)
 {
-	if (InStimulusID != TNumericLimits<ElementIndexType>::Max() && IsValidForTest_Short() && IsValid(this) && bEnable)
+	if (InStimulusID != MAX_uint16 && IsValidForTest_Short() && IsValid(this) && bEnable)
 	{
 		check(IsInGameThread());
 		if (SensorThreadType == ESensorThreadType::Main_Thread) //ReportSenseStimulusEvent only for Main_Thread
@@ -987,10 +979,10 @@ void USensorBase::ReportSenseStimulusEvent(const ElementIndexType InStimulusID)
 				const auto ContainerTree = GetSenseManager()->GetNamedContainerTree(SensorTag);
 				if (ContainerTree && GetSenseManager())
 				{
-					TSet<ElementIndexType> IDs = {InStimulusID};
+					TSet<uint16> IDs = {InStimulusID};
 					if (bIsHavePendingUpdate && ContainerTree && IsValidForTest() && bIsHavePendingUpdate)
 					{
-						TArray<ElementIndexType, TMemStackAllocator<>> OutIDs;
+						TArray<uint16, TMemStackAllocator<>> OutIDs;
 						{
 							FScopeLock Lock_CriticalSection(&SensorCriticalSection);
 							OutIDs = ContainerTree->CheckHashStack_TS(this->PendingUpdate);
@@ -1006,7 +998,7 @@ void USensorBase::ReportSenseStimulusEvent(const ElementIndexType InStimulusID)
 						//UpdateState = ESensorState::TestUpdated;
 						for (const FChannelSetup& Ch : ChannelSetup)
 						{
-							Ch.NewSensedUpdate(DetectDepth, IsOverrideSenseState(), Ch.bNewSenseForcedByBestScore);
+							Ch._SenseDetect->NewSensedUpdate(DetectDepth, IsOverrideSenseState(), Ch.bNewSenseForcedByBestScore);
 						}
 					}
 					else
@@ -1066,7 +1058,7 @@ bool USensorBase::RunSensorTest()
 					const IContainerTree& ContainerTreeRef = *ContainerTree;
 					if (!IsZeroBox(Box))
 					{
-						TSet<ElementIndexType> IDs;
+						TSet<uint16> IDs;
 						ContainerTreeRef.MarkRemoveControl();
 						if (Radius == 0.f)
 						{
@@ -1083,7 +1075,7 @@ bool USensorBase::RunSensorTest()
 
 						if (bIsHavePendingUpdate && ContainerTree && IsValidForTest_Short())
 						{
-							TArray<ElementIndexType, TMemStackAllocator<>> OutIDs;
+							TArray<uint16, TMemStackAllocator<>> OutIDs;
 							{
 								FScopeLock Lock_CriticalSection(&SensorCriticalSection);
 								OutIDs = ContainerTree->CheckHashStack_TS(this->PendingUpdate);
@@ -1107,7 +1099,7 @@ bool USensorBase::RunSensorTest()
 									UpdateState = ESensorState::TestUpdated;
 									for (const FChannelSetup& Chan : ChannelSetup)
 									{
-										Chan.NewSensedUpdate(DetectDepth, IsOverrideSenseState(), Chan.bNewSenseForcedByBestScore);
+										Chan._SenseDetect->NewSensedUpdate(DetectDepth, IsOverrideSenseState(), Chan.bNewSenseForcedByBestScore);
 									}
 									return true;
 								}
@@ -1119,7 +1111,7 @@ bool USensorBase::RunSensorTest()
 
 								for (const FChannelSetup& Chan : ChannelSetup)
 								{
-									Chan.EmptyUpdate(DetectDepth, IsOverrideSenseState());
+									Chan._SenseDetect->EmptyUpdate(DetectDepth, IsOverrideSenseState());
 								}
 								return true;
 							}
@@ -1138,7 +1130,7 @@ bool USensorBase::RunSensorTest()
 		{
 			for (const FChannelSetup& Chan : ChannelSetup)
 			{
-				Chan.EmptyUpdate(DetectDepth, IsOverrideSenseState());
+				Chan._SenseDetect->EmptyUpdate(DetectDepth, IsOverrideSenseState());
 			}
 			return true;
 		}
@@ -1157,7 +1149,7 @@ float USensorBase::UpdtDetectPoolAndReturnMinScore() const
 	float MinScore = MIN_flt;
 	for (const FChannelSetup& Chan : ChannelSetup)
 	{
-		auto& Sd = *Chan.GetDetectPool();
+		auto& Sd = *(Chan._SenseDetect);
 		Sd.EmptyArr(ESensorArrayByType::SenseForget);
 		Sd.DetectNew.Reset();
 		Sd.DetectCurrent.Reset();
@@ -1167,11 +1159,11 @@ float USensorBase::UpdtDetectPoolAndReturnMinScore() const
 }
 
 bool USensorBase::UpdtSensorTestForIDInternal(
-	const ElementIndexType Idx,
+	const uint16 Idx,
 	const IContainerTree* ContainerTree,
 	const float CurrentTime,
 	const float MinScore,
-	TArray<ElementIndexType>& ChannelContainsIDs) const
+	TArray<uint16>& ChannelContainsIDs) const
 {
 	if (LIKELY(IsValidForTest_Short() && ContainerTree))
 	{
@@ -1194,22 +1186,23 @@ bool USensorBase::UpdtSensorTestForIDInternal(
 
 							if (TotalResult == ESenseTestResult::Sensed)
 							{
-								ElementIndexType& Outi = ChannelContainsIDs[i];
-								Outi = ChanIt.ContainsInCurrentSense(It);
-								if (Outi == TNumericLimits<ElementIndexType>::Max())
+								uint16& Out_i = ChannelContainsIDs[i];
+								Out_i = ChanIt._SenseDetect->ContainsInCurrentSense(It);
+								if (Out_i == MAX_uint16)
 								{
 									It.FirstSensedTime = CurrentTime;
-									Outi = ChannelSetup[i].ContainsInLostSense(It);
-									if (Outi != TNumericLimits<ElementIndexType>::Max())
+									Out_i = ChannelSetup[i]._SenseDetect->ContainsInLostSense(It);
+									if (Out_i != MAX_uint16)
 									{
-										ChanIt.GetDetectPool()->GetPool()[Outi].FirstSensedTime = CurrentTime;
+										FSenseDetectPool& Pool = *ChanIt._SenseDetect;
+										Pool.GetPool()[Out_i].FirstSensedTime = CurrentTime;
 									}
 								}
 							}
 
 							if (It.BitChannels & ChanIt.GetSenseBitChannel() && ChanIt.MinBestScore <= It.Score)
 							{
-								ChanIt.Add(CurrentTime, MoveTemp(It), ChannelContainsIDs[i]);
+								ChanIt._SenseDetect->Add(CurrentTime, It, ChannelContainsIDs[i]);
 							}
 						}
 					}
@@ -1228,11 +1221,11 @@ bool USensorBase::UpdtSensorTestForIDInternal(
 	return false;
 }
 
-ESenseTestResult USensorBase::Sensor_Run_Test(const float MinScore, const float CurrentTime, FSensedStimulus& Stimulus, TArray<ElementIndexType>& Out) const
+ESenseTestResult USensorBase::Sensor_Run_Test(const float MinScore, const float CurrentTime, FSensedStimulus& Stimulus, TArray<uint16>& Out) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_SensorTests);
 
-	Out.Init(TNumericLimits<ElementIndexType>::Max(), ChannelSetup.Num());
+	Out.Init(MAX_uint16, ChannelSetup.Num());
 
 	bool bOnceContainsGate = false;
 	bool bOnceGate = false;
@@ -1240,7 +1233,7 @@ ESenseTestResult USensorBase::Sensor_Run_Test(const float MinScore, const float 
 	ESenseTestResult TotalResult = ESenseTestResult::None;
 	Stimulus.BitChannels &= (BitChannels.Value & ~IgnoreBitChannels.Value);
 
-	for (int32 i = 0; i < SensorTests.Num(); i++) //run sensors test for SensedStimulus struct
+	for (int32 i = 0; i < SensorTests.Num(); ++i) //run sensors test for SensedStimulus struct
 	{
 		if (LIKELY(IsInitialized())) // && Stimulus.TmpHash != MAX_uint32
 		{
@@ -1269,14 +1262,14 @@ ESenseTestResult USensorBase::Sensor_Run_Test(const float MinScore, const float 
 				}
 				if (TotalResult == ESenseTestResult::NotLost && !bOnceContainsGate)
 				{
-					for (int32 j = 0; j < ChannelSetup.Num(); j++)
+					for (int32 j = 0; j < ChannelSetup.Num(); ++j)
 					{
 						const FChannelSetup& ChanIt = ChannelSetup[j];
 						const uint64 Chan = ChanIt.GetSenseBitChannel();
 						if (Stimulus.BitChannels & Chan)
 						{
-							Out[j] = ChanIt.ContainsInCurrentSense(Stimulus);
-							if (Out[j] == TNumericLimits<ElementIndexType>::Max())
+							Out[j] = ChanIt._SenseDetect->ContainsInCurrentSense(Stimulus);
+							if (Out[j] == MAX_uint16)
 							{
 								Stimulus.BitChannels &= ~Chan;
 							}
@@ -1300,15 +1293,15 @@ ESenseTestResult USensorBase::Sensor_Run_Test(const float MinScore, const float 
 }
 
 
-void USensorBase::CheckWithCurrent(FSensedStimulus& SS, TArray<ElementIndexType>& Out) const
+void USensorBase::CheckWithCurrent(FSensedStimulus& SS, TArray<uint16>& Out) const
 {
 	for (int32 i = 0; i < ChannelSetup.Num(); i++)
 	{
 		const uint64 Chan = ChannelSetup[i].GetSenseBitChannel();
 		if (SS.BitChannels & Chan)
 		{
-			Out[i] = ChannelSetup[i].ContainsInCurrentSense(SS);
-			if (Out[i] == TNumericLimits<ElementIndexType>::Max())
+			Out[i] = ChannelSetup[i]._SenseDetect->ContainsInCurrentSense(SS);
+			if (Out[i] == MAX_uint16)
 			{
 				SS.BitChannels &= ~Chan;
 			}
@@ -1334,7 +1327,7 @@ void USensorBase::DetectionLostAndForgetUpdate()
 	{
 		for (const FChannelSetup& Ch : ChannelSetup)
 		{
-			Ch.NewAgeUpdate(CurrentTime, DetectDepth);
+			Ch._SenseDetect->NewAgeUpdate(CurrentTime, DetectDepth);
 		}
 	}
 }
@@ -1353,8 +1346,7 @@ void USensorBase::Add_SenseChannels(uint64 NewChannels)
 			if ((NewChannels & 1llu) && !(BitChannels.Value & (1llu << i)))
 			{
 				const int32 ID = ArraySorted::InsertUniqueSorted(ChannelSetup, FChannelSetup(i + 1), TLess<uint8>());
-				ChannelPool.Insert(MakeUnique<FSenseDetectPool>(), ID);
-				ChannelSetup[ID].Init(ChannelPool[ID].Get());
+				ChannelSetup[ID].Init();
 			}
 			NewChannels = NewChannels >> 1;
 			i++;
@@ -1610,18 +1602,6 @@ void USensorBase::OnSensorReady()
 		{
 			UpdateState = ESensorState::ReadyToUpdate;
 			SensorTransform = GetSenseReceiverComponent()->GetSensorTransform(SensorTag);
-
-			const bool bMultyThread = FPlatformMisc::NumberOfCores() > 1;
-			if (!bMultyThread && SensorThreadType != ESensorThreadType::Main_Thread)
-			{
-				SensorThreadType = ESensorThreadType::Main_Thread;
-			}
-	
-			bool bHighPriority = false;
-			//if (const APawn* Pawn = Cast<APawn>GetSensorOwner())
-			//{
-			//	bHighPriority = Cast<APlayerController>(Pawn->GetController())
-			//}
 			switch (SensorThreadType)
 			{
 				case ESensorThreadType::Main_Thread:
@@ -1631,7 +1611,7 @@ void USensorBase::OnSensorReady()
 				}
 				case ESensorThreadType::Sense_Thread:
 				{
-					const bool bSuccess = GetSenseManager()->RequestAsyncSenseUpdate(this, bHighPriority);
+					const bool bSuccess = GetSenseManager()->RequestAsyncSenseUpdate(this, false);
 					if (!bSuccess) UpdateState = ESensorState::NotUpdate;
 					break;
 				}
@@ -1666,10 +1646,10 @@ void USensorBase::OnSensorReadySkip()
 			It.NewSensed.Empty();
 			It.LostCurrentSensed.Empty();
 
-			if (It.GetDetectPool())
+			if (It._SenseDetect)
 			{
-				It.GetDetectPool()->NewCurrent.Empty();
-				It.GetDetectPool()->LostCurrent.Empty();
+				It._SenseDetect->NewCurrent.Empty();
+				It._SenseDetect->LostCurrent.Empty();
 			}
 			OnSensorReady();
 		}
@@ -1724,7 +1704,7 @@ bool USensorBase::FindComponent(const USenseStimulusBase* Comp, const ESensorArr
 		const int32 ChannelID = GetChannelID(InChannel);
 		if (ChannelID != INDEX_NONE)
 		{
-			const auto& Tmp = *GetSensedStimulusBySenseEvent(SenseState, ChannelID);
+			const auto& Tmp = GetSensedStimulusBySenseEvent(SenseState, ChannelID);
 			const int32 ID = FindInSortedArray(Tmp, Comp);
 			if (ID != INDEX_NONE)
 			{
@@ -1756,9 +1736,9 @@ TArray<FStimulusFindResult> USensorBase::FindStimulusInAllState(
 						ESensorArrayByType::SenseLost	  //
 					};
 
-				for (int32 i = 0; i < 3; i++)
+				for (int32 i = 0; i < 3; ++i)
 				{
-					const TArray<FSensedStimulus>& SSArray = *ChIt.GetSensedStimulusBySenseEvent(ByTypeArray[i]);
+					const auto& SSArray = ChIt.GetSensedStimulusBySenseEvent(ByTypeArray[i]);
 					const int32 ID = FindInSortedArray(SSArray, StimulusComponent);
 					if (ID != INDEX_NONE)
 					{
@@ -1843,9 +1823,9 @@ FStimulusFindResult USensorBase::FindStimulusInAllState_SingleChannel(const USen
 						ESensorArrayByType::SenseLost	  //
 					};
 
-				for (int32 i = 0; i < 3; i++)
+				for (int32 i = 0; i < 3; ++i)
 				{
-					const TArray<FSensedStimulus>& SSArray = *ChIt.GetSensedStimulusBySenseEvent(ByTypeArray[i]);
+					const auto& SSArray = ChIt.GetSensedStimulusBySenseEvent(ByTypeArray[i]);
 					const int32 ID = HashSorted::BinarySearch_HashType(SSArray, Hash);
 					if (ID != INDEX_NONE)
 					{
@@ -1877,7 +1857,7 @@ FStimulusFindResult USensorBase::FindStimulusInAllState_SingleChannel(const USen
 							Out.SensedID = ID;
 						}
 
-						Out.SensedData = (*ChIt.GetSensedStimulusBySenseEvent(Out.SensedType))[ID];
+						Out.SensedData = ChIt.GetSensedStimulusBySenseEvent(Out.SensedType)[ID];
 						return Out;
 					}
 				}
@@ -1913,7 +1893,7 @@ bool USensorBase::ContainsComponent(const USenseStimulusBase* Comp, const ESenso
 		const int32 ChannelID = GetChannelID(InChannel);
 		if (ChannelID != INDEX_NONE)
 		{
-			const TArray<FSensedStimulus>& Tmp = *GetSensedStimulusBySenseEvent(SenseState, ChannelID);
+			const auto& Tmp = GetSensedStimulusBySenseEvent(SenseState, ChannelID);
 			checkSlow(HashSorted::IsSortedByHash(Tmp));
 			const int32 ID = FindInSortedArray(Tmp, Comp);
 			if (ID != INDEX_NONE)
@@ -1940,8 +1920,8 @@ AActor* USensorBase::GetSensedActorByClass(const TSubclassOf<AActor> ActorClass,
 		const int32 ChannelID = GetChannelID(InChannel);
 		if (ChannelID != INDEX_NONE)
 		{
-			const TArray<FSensedStimulus>& Tmp = *GetSensedStimulusBySenseEvent(SenseState, ChannelID);
-			for (const FSensedStimulus& It : Tmp)
+			const auto& Tmp = GetSensedStimulusBySenseEvent(SenseState, ChannelID);
+			for (const auto& It : Tmp)
 			{
 				if (It.StimulusComponent.IsValid())
 				{
@@ -1965,8 +1945,8 @@ TArray<AActor*> USensorBase::GetSensedActorsByClass(const TSubclassOf<AActor> Ac
 		const int32 ChannelID = GetChannelID(InChannel);
 		if (ChannelID != INDEX_NONE)
 		{
-			const TArray<FSensedStimulus>& Tmp = *GetSensedStimulusBySenseEvent(SenseState, ChannelID);
-			for (const FSensedStimulus& It : Tmp)
+			const auto& Tmp = GetSensedStimulusBySenseEvent(SenseState, ChannelID);
+			for (const auto& It : Tmp)
 			{
 				if (It.StimulusComponent.IsValid())
 				{
@@ -2017,7 +1997,7 @@ void USensorBase::ClearCurrentSense(const bool bCallUpdate)
 
 			for (const FChannelSetup& Ch : ChannelSetup)
 			{
-				Ch.EmptyUpdate(DetectDepth, true);
+				Ch._SenseDetect->EmptyUpdate(DetectDepth, true);
 			}
 
 			if (bCallUpdate)
@@ -2054,7 +2034,7 @@ void USensorBase::ClearCurrentMemorySense(const bool bCallForget)
 
 			for (FChannelSetup& CS : ChannelSetup)
 			{
-				FSenseDetectPool& Sd = *CS.GetDetectPool();
+				FSenseDetectPool& Sd = *CS._SenseDetect;
 
 				Sd.ResetArr(ESensorArrayByType::SenseForget);
 				Sd.Forget = Sd.Lost;
@@ -2208,10 +2188,8 @@ void USensorBase::OnSensorUpdateReceiver(const EOnSenseEvent SenseEvent, const F
 {
 	if (IsValidForTest())
 	{
-#if WITH_EDITOR
 		check(IsInGameThread());
-#endif
-		const TArray<FSensedStimulus>& InSensedStimulus = *InChannelSetup.GetSensedStimulusBySenseEvent(SenseEvent);
+		const TArray<FSensedStimulus>& InSensedStimulus = InChannelSetup.GetSensedStimulusBySenseEvent(SenseEvent);
 		if (InSensedStimulus.Num() > 0)
 		{
 			if (const USenseReceiverComponent* Receiver = GetSenseReceiverComponent())
@@ -2224,7 +2202,7 @@ void USensorBase::OnSensorUpdateReceiver(const EOnSenseEvent SenseEvent, const F
 
 				if (IsCallOnSense(SenseEvent))
 				{
-					for (int32 i = InSensedStimulus.Num() - 1; i >= 0; i--)
+					for (int32 i = InSensedStimulus.Num() - 1; i >= 0; --i)
 					{
 						if (InSensedStimulus[i].StimulusComponent.IsValid())
 						{
@@ -2285,7 +2263,7 @@ TArray<FSensedStimulus> USensorBase::GetSensedStimulusBySenseEvent_BP(const ESen
 	if (ChannelSetup.IsValidIndex(ChannelID))
 	{
 		FScopeLock Lock_CriticalSection(&SensorCriticalSection);
-		Out = *GetSensedStimulusBySenseEvent(SenseEvent, ChannelID);
+		Out = GetSensedStimulusBySenseEvent(SenseEvent, ChannelID);
 	}
 	return MoveTemp(Out);
 }
@@ -2319,9 +2297,6 @@ void USensorBase::PostEditChangeProperty(struct FPropertyChangedEvent& e)
 	{
 		CheckAndRestoreSensorTestDefaults();
 	}
-
-
-	
 
 	{
 		TArray<uint8> Tmp = GetUniqueChannelSetup();
@@ -2624,7 +2599,7 @@ void USensorBase::DrawDebug(bool bTest, bool bCurrentSensed, bool bLostSensed, b
 	if (!bEnable || !World) return;
 
 	APlayerController* PlayerController = nullptr;
-	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; Iterator++)
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
 		PlayerController = Iterator->Get();
 		if (PlayerController)
@@ -2924,8 +2899,8 @@ bool USensorBase::CheckSensorTestToDefaults(TArray<FSenseSysRestoreObject>& Rest
 					}
 					if (!DefaultSensor) break;
 
-					TArray<USensorTestBase*>& TestCDO_Arr = DefaultSensor->SensorTests;
-					for (int32 j = 0; j < TestCDO_Arr.Num(); j++)
+					TArray<TObjectPtr<USensorTestBase>> TestCDO_Arr = DefaultSensor->SensorTests;
+					for (int32 j = 0; j < TestCDO_Arr.Num(); ++j)
 					{
 						if (IsValid(TestCDO_Arr[j]))
 						{
@@ -3009,7 +2984,54 @@ void USensorBase::MarkPackageDirty_Internal() const
 
 #endif //WITH_EDITOR
 
-void USensorBase::FPoolDeleter::operator()(FSenseDetectPool* Ptr) const
+
+/*
+bool USensorBase::RemoveFromSensingByHash(const uint32 Hash)
 {
-	delete Ptr;
+	const int32 CompIdx = HashSorted::Remove_HashType(Ignored_Components, Hash);
+	if (CompIdx == INDEX_NONE)
+	{
+		bool bRemoved = false;
+		for (auto& Ch : ChannelSetup)
+		{
+			bRemoved |= HashSorted::Remove_HashType(Ch.NewSensed, Hash, false) != INDEX_NONE;
+			if (!bRemoved)
+			{
+				bRemoved |= HashSorted::Remove_HashType(Ch.LostAllSensed, Hash, false) != INDEX_NONE;
+			}
+			if (!bRemoved)
+			{
+				bRemoved |= HashSorted::Remove_HashType(Ch.LostCurrentSensed, Hash, false) != INDEX_NONE;
+			}
+			if (!bRemoved)
+			{
+				bRemoved |= HashSorted::Remove_HashType(Ch.ForgetSensed, Hash, false) != INDEX_NONE;
+			}
+			if (!bRemoved)
+			{
+				const int32 ID = HashSorted::Remove_HashType(Ch.CurrentSensed, Hash, false);
+				bRemoved |= ID != INDEX_NONE;
+				if (ID != INDEX_NONE && Ch.BestSensedID_ByScore.Num())
+				{
+					Ch.BestSensedID_ByScore.RemoveSingle(ID);
+
+					const int32 RemIdx = Ch.BestSensedID_ByScore.IndexOfByKey(ID);
+					if (RemIdx != INDEX_NONE)
+					{
+						Ch.BestSensedID_ByScore.RemoveAt(RemIdx);
+						for (auto& It : Ch.BestSensedID_ByScore)
+						{
+							if (It > ID)
+							{
+								--It;
+							}
+						}
+					}
+				}
+			}
+		}
+		return bRemoved;
+	}
+	return false;
 }
+*/

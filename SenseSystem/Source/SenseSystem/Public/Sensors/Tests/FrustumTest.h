@@ -9,7 +9,7 @@
 #include "FrustumTest.generated.h"
 
 
-struct FFrustumTestData final
+struct FFrustumTestData
 {
 	FFrustumTestData() {}
 	FFrustumTestData(FVector2D Point1, FVector2D Point2, FVector2D ViewportSize, float FOVAngle, float FarPlaneDistance);

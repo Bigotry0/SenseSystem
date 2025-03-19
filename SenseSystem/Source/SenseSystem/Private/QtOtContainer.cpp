@@ -49,7 +49,7 @@ void IContainerTree::ResetRemoveControl(const int32 Idx) const
 	}
 }
 
-FSensedStimulus IContainerTree::GetSensedStimulusCopy_TS(const ElementIndexType InObjID) const
+FSensedStimulus IContainerTree::GetSensedStimulusCopy_TS(const uint16 InObjID) const
 {
 	int32 ID = INDEX_NONE;
 	{
@@ -71,7 +71,7 @@ FSensedStimulus IContainerTree::GetSensedStimulusCopy_TS(const ElementIndexType 
 	return FSensedStimulus();
 }
 
-FSensedStimulus IContainerTree::GetSensedStimulusCopy_Simple_TS(const ElementIndexType InObjID) const
+FSensedStimulus IContainerTree::GetSensedStimulusCopy_Simple_TS(const uint16 InObjID) const
 {
 	FRWScopeLock SRWLock(RWLock, SLT_ReadOnly);
 	if (GetCompDataPool().IsValidIndex(InObjID))
@@ -81,16 +81,16 @@ FSensedStimulus IContainerTree::GetSensedStimulusCopy_Simple_TS(const ElementInd
 	return FSensedStimulus();
 }
 
-TArray<IContainerTree::ElementIndexType> IContainerTree::CheckHash_TS(const TMap<ElementIndexType, uint32>& InArr) const
+TArray<uint16> IContainerTree::CheckHash_TS(const TMap<uint16, uint32>& InArr) const
 {
-	TArray<ElementIndexType> OutIDs;
+	TArray<uint16> OutIDs;
 	OutIDs.Reserve(InArr.Num());
 
 	FRWScopeLock SRWLock(RWLock, SLT_ReadOnly);
 	const TSparseArray<FSensedStimulus>& P = GetCompDataPool();
 	for (const auto& Elem : InArr)
 	{
-		const ElementIndexType ID = Elem.Key;
+		const uint16 ID = Elem.Key;
 		if (P.IsValidIndex(ID) && Elem.Value == P[ID].TmpHash)
 		{
 			OutIDs.Add(ID);
@@ -99,9 +99,9 @@ TArray<IContainerTree::ElementIndexType> IContainerTree::CheckHash_TS(const TMap
 	return MoveTemp(OutIDs);
 }
 
-TArray<IContainerTree::ElementIndexType, TMemStackAllocator<>> IContainerTree::CheckHashStack_TS(const TMap<ElementIndexType, uint32>& InArr) const
+TArray<uint16, TMemStackAllocator<>> IContainerTree::CheckHashStack_TS(const TMap<uint16, uint32>& InArr) const
 {
-	TArray<ElementIndexType, TMemStackAllocator<>> OutIDs;
+	TArray<uint16, TMemStackAllocator<>> OutIDs;
 	OutIDs.Reserve(InArr.Num());
 
 	FRWScopeLock SRWLock(RWLock, SLT_ReadOnly);
@@ -116,9 +116,9 @@ TArray<IContainerTree::ElementIndexType, TMemStackAllocator<>> IContainerTree::C
 	return MoveTemp(OutIDs);
 }
 
-TSet<IContainerTree::ElementIndexType> IContainerTree::CheckHashSet_TS(const TMap<ElementIndexType, uint32>& InArr) const
+TSet<uint16> IContainerTree::CheckHashSet_TS(const TMap<uint16, uint32>& InArr) const
 {
-	TSet<ElementIndexType> OutIDs;
+	TSet<uint16> OutIDs;
 	OutIDs.Reserve(InArr.Num());
 
 	FRWScopeLock SRWLock(RWLock, SLT_ReadOnly);
@@ -134,7 +134,7 @@ TSet<IContainerTree::ElementIndexType> IContainerTree::CheckHashSet_TS(const TMa
 }
 
 
-void IContainerTree::SetAge_TS(const ElementIndexType ID, const float AgeValue)
+void IContainerTree::SetAge_TS(const uint16 ID, const float AgeValue)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -143,7 +143,7 @@ void IContainerTree::SetAge_TS(const ElementIndexType ID, const float AgeValue)
 	}
 }
 
-void IContainerTree::SetScore_TS(const ElementIndexType ID, const float ScoreValue)
+void IContainerTree::SetScore_TS(const uint16 ID, const float ScoreValue)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -152,7 +152,7 @@ void IContainerTree::SetScore_TS(const ElementIndexType ID, const float ScoreVal
 	}
 }
 
-void IContainerTree::SetChannels_TS(const ElementIndexType ID, const uint64 Channels)
+void IContainerTree::SetChannels_TS(const uint16 ID, const uint64 Channels)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -161,7 +161,7 @@ void IContainerTree::SetChannels_TS(const ElementIndexType ID, const uint64 Chan
 	}
 }
 
-void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, const TArray<FSensedPoint>& InSensedPoints, const float InCurrentTime)
+void IContainerTree::SetSensedPoints_TS(const uint16 ID, const TArray<FSensedPoint>& InSensedPoints, const float InCurrentTime)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -171,7 +171,7 @@ void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, const TArray<
 	}
 }
 
-void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, const FSensedPoint& InSensedPoints, const float InCurrentTime)
+void IContainerTree::SetSensedPoints_TS(const uint16 ID, const FSensedPoint& InSensedPoints, const float InCurrentTime)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -182,7 +182,7 @@ void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, const FSensed
 }
 
 
-void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, TArray<FSensedPoint>&& InSensedPoints, const float InCurrentTime)
+void IContainerTree::SetSensedPoints_TS(const uint16 ID, TArray<FSensedPoint>&& InSensedPoints, const float InCurrentTime)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -192,7 +192,7 @@ void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, TArray<FSense
 	}
 }
 
-void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, FSensedPoint&& InSensedPoints, const float InCurrentTime)
+void IContainerTree::SetSensedPoints_TS(const uint16 ID, FSensedPoint&& InSensedPoints, const float InCurrentTime)
 {
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 	if (GetCompDataPool().IsValidIndex(ID))
@@ -203,7 +203,7 @@ void IContainerTree::SetSensedPoints_TS(const ElementIndexType ID, FSensedPoint&
 }
 
 
-IContainerTree::ElementIndexType FSenseSys_QuadTree::Insert(const FSensedStimulus& ComponentData, const FBox InBox)
+uint16 FSenseSys_QuadTree::Insert(const FSensedStimulus& ComponentData, const FBox InBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_QuadTree_Insert);
 
@@ -211,7 +211,7 @@ IContainerTree::ElementIndexType FSenseSys_QuadTree::Insert(const FSensedStimulu
 
 	return Tree.Insert(ComponentData, TreeHelper::ToBox2D(InBox));
 }
-IContainerTree::ElementIndexType FSenseSys_QuadTree::Insert(FSensedStimulus&& ComponentData, const FBox InBox)
+uint16 FSenseSys_QuadTree::Insert(FSensedStimulus&& ComponentData, const FBox InBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_QuadTree_Insert);
 
@@ -220,19 +220,19 @@ IContainerTree::ElementIndexType FSenseSys_QuadTree::Insert(FSensedStimulus&& Co
 	return Tree.Insert(MoveTemp(ComponentData), TreeHelper::ToBox2D(InBox));
 }
 
-void FSenseSys_QuadTree::Update(const ElementIndexType InObjID, const FBox NewBox)
+void FSenseSys_QuadTree::Update(const uint16 InObjID, const FBox NewBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_QuadTree_Update);
 
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 
-	if (InObjID != MaxIndex())
+	if (InObjID != MAX_uint16)
 	{
 		Tree.Update(InObjID, TreeHelper::ToBox2D(NewBox));
 	}
 }
 
-bool FSenseSys_QuadTree::Remove(const ElementIndexType InObjID)
+bool FSenseSys_QuadTree::Remove(const uint16 InObjID)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_QuadTree_Remove);
 
@@ -243,7 +243,7 @@ bool FSenseSys_QuadTree::Remove(const ElementIndexType InObjID)
 		IndexRemoveControl.RemIDs.Add(InObjID);
 		IndexRemoveControl.bRemove = true;
 	}
-	check(InObjID != MaxIndex());
+	check(InObjID != MAX_uint16);
 	Tree.Remove(InObjID);
 
 	return true;
@@ -264,7 +264,7 @@ void FSenseSys_QuadTree::Collapse()
 }
 
 
-IContainerTree::ElementIndexType FSenseSys_OcTree::Insert(const FSensedStimulus& ComponentData, const FBox InBox)
+uint16 FSenseSys_OcTree::Insert(const FSensedStimulus& ComponentData, const FBox InBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_Insert);
 
@@ -272,7 +272,7 @@ IContainerTree::ElementIndexType FSenseSys_OcTree::Insert(const FSensedStimulus&
 
 	return Tree.Insert(ComponentData, InBox);
 }
-IContainerTree::ElementIndexType FSenseSys_OcTree::Insert(FSensedStimulus&& ComponentData, const FBox InBox)
+uint16 FSenseSys_OcTree::Insert(FSensedStimulus&& ComponentData, const FBox InBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_Insert);
 
@@ -281,19 +281,19 @@ IContainerTree::ElementIndexType FSenseSys_OcTree::Insert(FSensedStimulus&& Comp
 	return Tree.Insert(MoveTemp(ComponentData), InBox);
 }
 
-void FSenseSys_OcTree::Update(const ElementIndexType InObjID, const FBox NewBox)
+void FSenseSys_OcTree::Update(const uint16 InObjID, const FBox NewBox)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_Update);
 
 	FRWScopeLock SRWLock(RWLock, SLT_Write);
 
-	if (InObjID != MaxIndex())
+	if (InObjID != MAX_uint16)
 	{
 		Tree.Update(InObjID, NewBox);
 	}
 }
 
-bool FSenseSys_OcTree::Remove(const ElementIndexType InObjID)
+bool FSenseSys_OcTree::Remove(const uint16 InObjID)
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_Remove);
 
@@ -304,7 +304,7 @@ bool FSenseSys_OcTree::Remove(const ElementIndexType InObjID)
 		IndexRemoveControl.RemIDs.Add(InObjID);
 		IndexRemoveControl.bRemove = true;
 	}
-	check(InObjID != MaxIndex());
+	check(InObjID != MAX_uint16);
 	Tree.Remove(InObjID);
 	return true;
 }
@@ -326,7 +326,7 @@ void FSenseSys_OcTree::Collapse()
 }
 
 
-void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TArray<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TArray<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -336,7 +336,7 @@ void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TArray<ElementIndexType>& O
 	const auto InBox = FInBoxPredicate(Tree, Box2D, InBitChannels);
 	Tree.GetElementsIDs(Box2D, InBox, Out);
 }
-void FSenseSys_QuadTree::GetInRadiusIDs(const FSenseSys_QuadTree::Real Radius, const FVector Center, TArray<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_QuadTree::GetInRadiusIDs(const FSenseSys_QuadTree::Real Radius, const FVector Center, TArray<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInRadius);
 
@@ -349,7 +349,7 @@ void FSenseSys_QuadTree::GetInBoxRadiusIDs(
 	const FBox Box,
 	const FVector Center,
 	const FSenseSys_QuadTree::Real Radius,
-	TArray<ElementIndexType>& Out,
+	TArray<uint16>& Out,
 	const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBoxRadius);
@@ -361,7 +361,7 @@ void FSenseSys_QuadTree::GetInBoxRadiusIDs(
 	Tree.GetElementsIDs(InRadius.Box, InRadius, Out);
 }
 
-void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -371,7 +371,7 @@ void FSenseSys_QuadTree::GetInBoxIDs(const FBox Box, TSet<ElementIndexType>& Out
 	const auto InBox = FInBoxPredicate(Tree, Box2D, InBitChannels);
 	Tree.GetElementsIDs(Box2D, InBox, Out);
 }
-void FSenseSys_QuadTree::GetInRadiusIDs(const FSenseSys_QuadTree::Real Radius, const FVector Center, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_QuadTree::GetInRadiusIDs(const FSenseSys_QuadTree::Real Radius, const FVector Center, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInRadius);
 
@@ -380,7 +380,7 @@ void FSenseSys_QuadTree::GetInRadiusIDs(const FSenseSys_QuadTree::Real Radius, c
 	const auto InRadius = FInRadiusPredicate(Tree, Center, Radius, InBitChannels);
 	Tree.GetElementsIDs(InRadius.Box, InRadius, Out);
 }
-void FSenseSys_QuadTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center, const FSenseSys_QuadTree::Real Radius, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_QuadTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center, const FSenseSys_QuadTree::Real Radius, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBoxRadius);
 
@@ -393,8 +393,8 @@ void FSenseSys_QuadTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center,
 
 FBox FSenseSys_QuadTree::GetMaxIntersect(const FBox Box) const
 {
-	const TreeIndexType MaxIntersect = Tree.GetMaxIntersect(TreeHelper::ToBox2D(Box));
-	if (MaxIntersect != MaxIndex())
+	const uint16 MaxIntersect = Tree.GetMaxIntersect(TreeHelper::ToBox2D(Box));
+	if (MaxIntersect != MAX_uint16)
 	{
 		const FBox2D Box2D = Tree.GetTreeBox(MaxIntersect);
 		return TreeHelper::ToBox(Box2D);
@@ -403,7 +403,7 @@ FBox FSenseSys_QuadTree::GetMaxIntersect(const FBox Box) const
 }
 
 
-void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TArray<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TArray<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -412,7 +412,7 @@ void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TArray<ElementIndexType>& Out
 	const auto InBox = FInBoxPredicate(Tree, Box, InBitChannels);
 	Tree.GetElementsIDs(Box, InBox, Out);
 }
-void FSenseSys_OcTree::GetInRadiusIDs(const FSenseSys_OcTree::Real Radius, const FVector Center, TArray<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_OcTree::GetInRadiusIDs(const FSenseSys_OcTree::Real Radius, const FVector Center, TArray<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -425,7 +425,7 @@ void FSenseSys_OcTree::GetInBoxRadiusIDs(
 	const FBox Box,
 	const FVector Center,
 	const FSenseSys_OcTree::Real Radius,
-	TArray<ElementIndexType>& Out,
+	TArray<uint16>& Out,
 	const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBoxRadius);
@@ -436,7 +436,7 @@ void FSenseSys_OcTree::GetInBoxRadiusIDs(
 	Tree.GetElementsIDs(InRadius.Box, InRadius, Out);
 }
 
-void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -445,7 +445,7 @@ void FSenseSys_OcTree::GetInBoxIDs(const FBox Box, TSet<ElementIndexType>& Out, 
 	const auto InBox = FInBoxPredicate(Tree, Box, InBitChannels);
 	Tree.GetElementsIDs(Box, InBox, Out);
 }
-void FSenseSys_OcTree::GetInRadiusIDs(const FSenseSys_OcTree::Real Radius, const FVector Center, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_OcTree::GetInRadiusIDs(const FSenseSys_OcTree::Real Radius, const FVector Center, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBox);
 
@@ -454,7 +454,7 @@ void FSenseSys_OcTree::GetInRadiusIDs(const FSenseSys_OcTree::Real Radius, const
 	const auto InRadius = FInRadiusPredicate(Tree, Center, Radius, InBitChannels);
 	Tree.GetElementsIDs(InRadius.Box, InRadius, Out);
 }
-void FSenseSys_OcTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center, const FSenseSys_OcTree::Real Radius, TSet<ElementIndexType>& Out, const uint64 InBitChannels) const
+void FSenseSys_OcTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center, const FSenseSys_OcTree::Real Radius, TSet<uint16>& Out, const uint64 InBitChannels) const
 {
 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_OcTree_GetInBoxRadius);
 
@@ -466,8 +466,8 @@ void FSenseSys_OcTree::GetInBoxRadiusIDs(const FBox Box, const FVector Center, c
 
 FBox FSenseSys_OcTree::GetMaxIntersect(const FBox Box) const
 {
-	const TreeIndexType MaxIntersect = Tree.GetMaxIntersect(Box);
-	if (MaxIntersect != MaxIndex())
+	const uint16 MaxIntersect = Tree.GetMaxIntersect(Box);
+	if (MaxIntersect != MAX_uint16)
 	{
 		return FBox(Tree.GetTreeBox(MaxIntersect));
 	}

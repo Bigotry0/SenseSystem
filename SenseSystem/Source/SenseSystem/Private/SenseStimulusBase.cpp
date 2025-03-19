@@ -34,7 +34,7 @@ void FStimulusTagResponse::SetAge(const float AgeValue)
 	Age = AgeValue;
 	if (ContainerTree)
 	{
-		check(GetObjID() != TNumericLimits<ElementIndexType>::Max());
+		check(GetObjID() != MAX_uint16);
 		ContainerTree->SetAge_TS(GetObjID(), AgeValue);
 	}
 }
@@ -44,7 +44,7 @@ void FStimulusTagResponse::SetScore(const float ScoreValue)
 	Score = ScoreValue;
 	if (ContainerTree)
 	{
-		check(GetObjID() != TNumericLimits<ElementIndexType>::Max());
+		check(GetObjID() != MAX_uint16);
 		ContainerTree->SetScore_TS(GetObjID(), ScoreValue);
 	}
 }
@@ -54,7 +54,7 @@ void FStimulusTagResponse::SetBitChannels(const uint64 NewBit)
 	BitChannels.Value = NewBit;
 	if (ContainerTree)
 	{
-		check(GetObjID() != TNumericLimits<ElementIndexType>::Max());
+		check(GetObjID() != MAX_uint16);
 		ContainerTree->SetChannels_TS(GetObjID(), NewBit);
 	}
 }
@@ -64,7 +64,7 @@ void FStimulusTagResponse::UpdatePosition(const FVector& NewLocation, const TArr
 {
 	if (ContainerTree)
 	{
-		check(GetObjID() != TNumericLimits<ElementIndexType>::Max());
+		check(GetObjID() != MAX_uint16);
 
 		IContainerTree& CTree = *ContainerTree;
 		FSensedStimulus SS = CTree.GetSensedStimulusCopy_Simple_TS(GetObjID());
@@ -281,7 +281,7 @@ void USenseStimulusBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		SetEnableSenseStimulus(false);
 	}
-
+	FPlatformMisc::MemoryBarrier();
 	Cleanup();
 	Super::EndPlay(EndPlayReason);
 }
@@ -541,10 +541,13 @@ bool USenseStimulusBase::UnRegisterSelfSense()
 	{
 		bRegisteredForSense = false;
 		SetComponentTickEnabled(false);
-		const auto OwnerActor = GetOwner();
-		if (OwnerActor && OwnerActor->GetRootComponent())
+
+		if (const auto OwnerActor = GetOwner())
 		{
-			OwnerActor->GetRootComponent()->TransformUpdated.RemoveAll(this);
+			if (const auto Root = OwnerActor->GetRootComponent())
+			{
+				Root->TransformUpdated.RemoveAll(this);
+			}
 		}
 
 		if (GetSenseManager() != nullptr && GetSenseManager()->HaveSenseStimulus())
@@ -561,7 +564,7 @@ bool USenseStimulusBase::UnRegisterSelfSense()
 				GetSenseManager()->UnRegisterSenseStimulus(this);
 			}
 		}
-
+		FPlatformMisc::MemoryBarrier();
 		RemoveFromRoot();
 	}
 
@@ -592,8 +595,8 @@ void USenseStimulusBase::ReportSenseEvent(const FName Tag)
 	{
 		if (const FStimulusTagResponse* StrPtr = GetStimulusTagResponse(Tag))
 		{
-			const ElementIndexType StimulusID = StrPtr->GetObjID();
-			if (StimulusID != TNumericLimits<ElementIndexType>::Max())
+			const uint16 StimulusID = StrPtr->GetObjID();
+			if (StimulusID != MAX_uint16)
 			{
 				const auto& Delegate = GetSenseManager()->ReportStimulus_Event;
 				if (Delegate.IsBound())
@@ -677,23 +680,36 @@ void USenseStimulusBase::RootComponentTransformUpdated(
 
 void USenseStimulusBase::BindTransformUpdated()
 {
-	const auto OwnerActor = GetOwner();
-	if (OwnerActor && OwnerActor->GetRootComponent())
+	if (const auto OwnerActor = GetOwner())
 	{
-		OwnerActor->GetRootComponent()->TransformUpdated.AddUObject(this, &USenseStimulusBase::RootComponentTransformUpdated);
+		if (const auto Root = OwnerActor->GetRootComponent())
+		{
+			Root->TransformUpdated.AddUObject(this, &USenseStimulusBase::RootComponentTransformUpdated);
+		}
+		else
+		{
+			UE_LOG(
+				LogSenseSys,
+				Error,
+				TEXT(" %s, SenseStimulusBase::BindTransformUpdated: OwnerActor %s dont have a valid RootComponent"),
+				*GetNameSafe(this),
+				*GetNameSafe(OwnerActor))
+		}
 	}
 	else
 	{
-		//UE_LOG(LogSenseSys, Error, TEXT("%s SenseStimulusBase::BindTransformUpdated: ,  dont have a valid OwnerActor"), *GetNameSafe(this))
+		UE_LOG(LogSenseSys, Error, TEXT("%s SenseStimulusBase::BindTransformUpdated: ,  dont have a valid OwnerActor"), *GetNameSafe(this))
 	}
 }
 
 void USenseStimulusBase::UnBindTransformUpdated() const
 {
-	const auto OwnerActor = GetOwner();
-	if (OwnerActor && OwnerActor->GetRootComponent())
+	if (const auto OwnerActor = GetOwner())
 	{
-		OwnerActor->GetRootComponent()->TransformUpdated.RemoveAll(this);
+		if (const auto Root = OwnerActor->GetRootComponent())
+		{
+			Root->TransformUpdated.RemoveAll(this);
+		}
 	}
 }
 
@@ -1103,16 +1119,19 @@ void USenseStimulusBase::DrawComponent(const FSceneView* View, FPrimitiveDrawInt
 							TArray<FDrawDT> DrawArr;
 							DrawArr.Reserve(TmpLost.Num());
 
-							for (const auto ItLost : TmpLost)
+							for (const auto& ItLost : TmpLost)
 							{
-								if (const USenseReceiverComponent* Receiver = USenseSystemBPLibrary::GetReceiverFromActor(ItLost))
+								if (ItLost)
 								{
-									FSensedStimulus SS;
-									ESuccessState Success;
-									Receiver->FindSensedActor(GetOwner(), ESensorType::Active, It.Key, ESensorArrayByType::SenseLost, SS, Success);
-										if (Success == ESuccessState::Success && ItLost)
+									if (const USenseReceiverComponent* Receiver = USenseSystemBPLibrary::GetReceiverFromActor(ItLost))
 									{
-										DrawArr.Add(FDrawDT(SS.SensedTime, SS.SensedPoints[0].SensedPoint, ItLost->GetActorLocation()));
+										FSensedStimulus SS;
+										ESuccessState Success;
+										Receiver->FindSensedActor(GetOwner(), ESensorType::Active, It.Key, ESensorArrayByType::SenseLost, SS, Success);
+										if (Success == ESuccessState::Success && ItLost)
+										{
+											DrawArr.Add(FDrawDT(SS.SensedTime, SS.SensedPoints[0].SensedPoint, ItLost->GetActorLocation()));
+										}
 									}
 								}
 							}
@@ -1280,17 +1299,17 @@ void USenseStimulusBase::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 	if (bEnable && IsRegisteredForSense())
 	{
-	const bool bNeedTick = (Mobility == EStimulusMobility::MovableTick) || (bDirtyTransform && Mobility == EStimulusMobility::MovableOwner);
+		const bool bNeedTick = (Mobility == EStimulusMobility::MovableTick) || (bDirtyTransform && Mobility == EStimulusMobility::MovableOwner);
 		if (bNeedTick)
 		{
 			if (const UWorld* World = GetWorld())
-	{
-				if (const auto SenseManagerPtr = GetSenseManager())
+			{
+				if (const auto SM = GetSenseManager())
 				{
 					const float PositionUpdateTime = World->GetTimeSeconds();
 					for (auto& It : TagResponse)
 					{
-						if (SenseManagerPtr->IsHaveReceiverTag(It.Key)) //todo Event driven bool
+						if (SM->IsHaveReceiverTag(It.Key)) //todo Event driven bool
 						{
 							const FVector NewLocation = GetSingleSensePoint(It.Key);
 							const TArray<FVector> Points = GetSensePoints(It.Key);

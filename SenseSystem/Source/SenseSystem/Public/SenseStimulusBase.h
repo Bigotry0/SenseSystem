@@ -58,11 +58,10 @@ struct SENSESYSTEM_API FStimulusTagResponse
 {
 	GENERATED_USTRUCT_BODY()
 
-	using ElementIndexType = int32;
 
 private:
 	/** SensedStimulus ID */
-	ElementIndexType ObjID = TNumericLimits<ElementIndexType>::Max();
+	uint16 ObjID = MAX_uint16;
 
 public:
 	FStimulusTagResponse() {}
@@ -97,8 +96,8 @@ public:
 	TMap<class AActor*, uint64> TmpLost;
 
 
-	FORCEINLINE ElementIndexType GetObjID() const { return ObjID; }
-	FORCEINLINE void SetObjID(const ElementIndexType Val) { ObjID = Val; }
+	FORCEINLINE uint16 GetObjID() const { return ObjID; }
+	FORCEINLINE void SetObjID(const uint16 Val) { ObjID = Val; }
 
 	void SetAge(float AgeValue);
 	void SetScore(float ScoreValue);
@@ -120,7 +119,7 @@ public:
 		return BitChannels.Value & InChannels;
 	}
 	
-	//FORCEINLINE friend ElementIndexType GetTypeHash(const FStimulusTagResponse& In) { return GetTypeHash(In.GetObjID()); }
+	//FORCEINLINE friend uint32 GetTypeHash(const FStimulusTagResponse& In) { return GetTypeHash(In.GetObjID()); }
 	//FORCEINLINE bool operator==(const FStimulusTagResponse& Other) const { return SensorTag == Other.SensorTag; }
 	//FORCEINLINE bool operator==(const FName& Other) const { return SensorTag == Other; }
 
@@ -171,7 +170,7 @@ public:
 	// Sets default values for this component's properties
 	USenseStimulusBase(const FObjectInitializer& ObjectInitializer);
 	virtual ~USenseStimulusBase() override;
-	using ElementIndexType = FStimulusTagResponse::ElementIndexType;
+
 	friend class USenseManager;
 private:
 	

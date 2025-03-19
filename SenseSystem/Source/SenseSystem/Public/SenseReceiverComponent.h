@@ -7,7 +7,6 @@
 #include "UObject/UObjectBaseUtility.h"
 #include "Components/SceneComponent.h"
 
-#include "SenseSystem.h"
 #include "SenseSysHelpers.h"
 #include "SensedStimulStruct.h"
 #include "Sensors/SensorBase.h"
@@ -26,7 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	FOnSensorUpdateDelegate,
 	const USensorBase*, SensorPtr,
 	int32, Channel,
-	const TArray<FSensedStimulus>&, inSensedStimulus);
+	const TArray<FSensedStimulus>, inSensedStimulus);
 // clang-format on
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnMainTargetStatusChanged, AActor*, Actor, FSensedStimulus, SensedStimulus, const EOnSenseEvent, SenseEvent);
@@ -36,7 +35,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnMainTargetStatusChanged, AActo
 * SenseReceiverComponent
 */
 UCLASS(BlueprintType, Blueprintable, ClassGroup = (SenseSystem), meta = (BlueprintSpawnableComponent), hidecategories = ("Rendering"))
-class SENSESYSTEM_API USenseReceiverComponent final : public USceneComponent
+class SENSESYSTEM_API USenseReceiverComponent : public USceneComponent
 {
 	GENERATED_BODY()
 public:
@@ -88,6 +87,11 @@ public:
 	virtual void BeginDestroy() override;
 	virtual void DestroyComponent(bool bPromoteChildren) override;
 
+	//virtual void PostInitProperties() override;
+	//void OnComponentCreated() override	{ Super::OnComponentCreated();}
+	//void InitializeComponent() override	{ Super::InitializeComponent();}
+	//void OnChildAttached(USceneComponent* ChildComponent) override { Super::OnChildAttached(ChildComponent);}
+	//void OnChildDetached(USceneComponent* ChildComponent) override { Super::OnChildDetached(ChildComponent);}
 
 	/************************************/
 
@@ -102,9 +106,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SenseReceiver")
 	bool bSensorRotationFromController = false;
 
-	UPROPERTY(EditDefaultsOnly)
-	bool bAllowRuntimeSensorCreation = false;
-
 	/************************************/
 
 
@@ -118,15 +119,15 @@ public:
 
 	/** Realtime Update Sensors */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "SenseReceiver|Sensors")
-	TArray<UActiveSensor*> ActiveSensors; //todo: Instanced Array?
+	TArray<TObjectPtr<UActiveSensor>> ActiveSensors;
 
 	/** Event Update Sensors */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "SenseReceiver|Sensors")
-	TArray<UPassiveSensor*> PassiveSensors; //todo: Instanced Array?
+	TArray<TObjectPtr<UPassiveSensor>> PassiveSensors;
 
 	/** Manual Update Sensors */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "SenseReceiver|Sensors")
-	TArray<UActiveSensor*> ManualSensors; //todo: Instanced Array?
+	TArray<TObjectPtr<UActiveSensor>> ManualSensors;
 
 	/************************************/
 	// clang-format off
@@ -145,11 +146,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SenseSystem|SenseReceiver", meta = (DeterminesOutputType = "SensorClass", Keywords = "Destroy Remove Delete Sensor"))
 	bool DestroySensor(ESensorType Sensor_Type, FName Tag);
 
-	TArray<USensorBase*> GetSensorsByType(ESensorType Sensor_Type) const;
-	TArrayView<USensorBase*> GetSensorsByType(ESensorType Sensor_Type);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "SenseSystem|SenseReceiver", meta = (Keywords = "Get Sensors By Type"))
 	TArray<USensorBase*> GetSensorsByType_BP(ESensorType Sensor_Type) const;
+	TArray<TObjectPtr<USensorBase>> GetSensorsByType(ESensorType Sensor_Type) const;
 
 
 	/*Get Sensor with force validation By Class*/
@@ -288,79 +288,71 @@ public:
 	void SetEnableAllSensors(bool bEnable, bool bForget = true);
 
 	UFUNCTION()
-	void BindOnReportStimulusEvent(int32 StimulusID, FName SensorTag);
+	void BindOnReportStimulusEvent(uint16 StimulusID, FName SensorTag);
 
 	/************************************/
 
 private:
-	template<class T>
-	static T* FindInSensorArray_ByTag(const TArray<T*>& InArr, FName Tag)
+	/** ObjectByClassPredicate */
+	struct FObjectByClassPredicate
 	{
-		return *InArr.FindByPredicate([Tag](const T* S) { return S && S->SensorTag == Tag; });
-	}
-	template<class T>
-	static T* FindInSensorArray_ByClass(const TArray<T*>& InArr, TSubclassOf<USensorBase> SensorClass)
+		explicit FObjectByClassPredicate(const TSubclassOf<class UObject> InClass) : Class(InClass) {}
+		const TSubclassOf<class UObject> Class = nullptr;
+		FORCEINLINE bool operator()(const class UObject* S) const { return S && S->IsA(Class.Get()); }
+	};
+	/** SensorByTagPredicate */
+	struct FSensorByTagPredicate
 	{
-		return *InArr.FindByPredicate([&SensorClass](const T* S) { return S && S->IsA(SensorClass.Get()); });
-	}
+		explicit FSensorByTagPredicate(const FName Tag) : FindTag(Tag) {}
+		const FName FindTag = NAME_None;
+		FORCEINLINE bool operator()(const USensorBase* S) const { return S && S->SensorTag == FindTag; }
+	};
 
-	template<typename T, typename U>
-	static FORCEINLINE TArrayView<T*> TypeArr(TArray<U*>& InArr)
+	template<class T>
+	static T* FindInArray_ByTag(const TArray<TObjectPtr<T>>& InArr, FName Tag);
+	template<class T>
+	static T* FindInArray_ByClass(const TArray<TObjectPtr<T>>& InArr, TSubclassOf<USensorBase> SensorClass);
+
+
+};
+
+
+template<class T>
+FORCEINLINE T* USenseReceiverComponent::FindInArray_ByTag(const TArray<TObjectPtr<T>>& InArr, const FName Tag)
+{
+	const int32 ID = InArr.IndexOfByPredicate(FSensorByTagPredicate(Tag));
+	return ID != INDEX_NONE ? InArr[ID] : nullptr;
+}
+template<class T>
+FORCEINLINE T* USenseReceiverComponent::FindInArray_ByClass(const TArray<TObjectPtr<T>>& InArr, const TSubclassOf<USensorBase> SensorClass)
+{
+	const int32 ID = InArr.IndexOfByPredicate(FObjectByClassPredicate(SensorClass));
+	return ID != INDEX_NONE ? InArr[ID] : nullptr;
+}
+
+
+FORCEINLINE void USenseReceiverComponent::UpdateContainsSenseThreadSensors()
+{
+	bContainsSenseThreadSensors = false;
+	for (uint8 i = 1; i < 4; i++)
 	{
-		return TArrayView<T*>(reinterpret_cast<T**>(InArr.GetData()), InArr.Num());
-	}
-	template<typename InvokeFunction, typename... Args>
-	FORCEINLINE void ForSensorType(ESensorType SensorType, InvokeFunction Function, Args... args)
-	{
-		for (USensorBase* const It : GetSensorsByType(SensorType))
+		const auto SensorsArr = GetSensorsByType(static_cast<ESensorType>(i));
+		for (const auto It : SensorsArr)
 		{
-			if (IsValid(It))
+			if (It && (It->SensorThreadType == ESensorThreadType::Sense_Thread || It->SensorThreadType == ESensorThreadType::Sense_Thread_HighPriority))
 			{
-				Invoke(Function, It, Forward<Args>(args)...);
+				bContainsSenseThreadSensors = true;
+				return;
 			}
 		}
 	}
-	template<typename InvokeFunction, typename... Args>
-	FORCEINLINE void ForEachSensor(InvokeFunction Function, Args... args)
-	{
-		for (uint8 i = 1; i < 4; i++)
-		{
-			ForSensorType<InvokeFunction, Args...>(static_cast<ESensorType>(i), Function, Forward<Args>(args)...);
-		}
-	}
-};
-
-FORCEINLINE TArray<USensorBase*> USenseReceiverComponent::GetSensorsByType(const ESensorType Sensor_Type) const
-{
-	switch (Sensor_Type)
-	{
-		case ESensorType::Active: return TArray<USensorBase*>(ActiveSensors);
-		case ESensorType::Passive: return TArray<USensorBase*>(PassiveSensors);
-		case ESensorType::Manual: return TArray<USensorBase*>(ManualSensors);
-		default: break;
-	}
-	return {};
-}
-FORCEINLINE TArrayView<USensorBase*> USenseReceiverComponent::GetSensorsByType(const ESensorType Sensor_Type)
-{
-	switch (Sensor_Type)
-	{
-		case ESensorType::Active: return TypeArr<USensorBase>(ActiveSensors);
-		case ESensorType::Passive: return TypeArr<USensorBase>(PassiveSensors);
-		case ESensorType::Manual: return TypeArr<USensorBase>(ManualSensors);
-		default: break;
-	}
-	return TArrayView<USensorBase*>();
-}
-FORCEINLINE TArray<USensorBase*> USenseReceiverComponent::GetSensorsByType_BP(const ESensorType Sensor_Type) const
-{
-	return TArray<USensorBase*>(GetSensorsByType(Sensor_Type));
 }
 
 FORCEINLINE bool USenseReceiverComponent::ContainsSenseThreadSensors() const
 {
 	return bContainsSenseThreadSensors;
 }
+
 
 FORCEINLINE FTransform USenseReceiverComponent::GetSensorTransform_Implementation(const FName SensorTag) const
 {
@@ -374,6 +366,7 @@ FORCEINLINE FTransform USenseReceiverComponent::GetSensorTransformDefault(const 
 	{
 		Out.SetRotation(GetOwnerControllerRotation());
 	}
+	//UE_LOG(LogSenseSys, Warning, TEXT("GetOwnerControllerRotation(): %s"), *Out.ToString());
 	return Out;
 }
 

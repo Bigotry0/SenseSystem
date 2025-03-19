@@ -29,7 +29,7 @@ class UObject;
 /**
 * RegisteredSensorTags struct
 */
-struct SENSESYSTEM_API FRegisteredSensorTags final : FNoncopyable
+struct SENSESYSTEM_API FRegisteredSensorTags : FNoncopyable
 {
 	FRegisteredSensorTags();
 	~FRegisteredSensorTags();
@@ -73,13 +73,13 @@ private:
 * Managing Sense Thread
 */
 UCLASS(BlueprintType, ClassGroup = (SenseSystem))
-class SENSESYSTEM_API USenseManager final
+class SENSESYSTEM_API USenseManager
 	: public UWorldSubsystem
-	, public FTickableGameObject 
+	, public FTickableGameObject
 {
 	GENERATED_BODY()
 public:
-	DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FReport_StimulusEvent, int32, StimulusID, FName, SensorTag);
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FReport_StimulusEvent, uint16, StimulusID, FName, SensorTag);
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnObjStatusChanged, UObject*, Obj);
 
 	USenseManager();
@@ -112,7 +112,7 @@ public:
 	bool RequestAsyncSenseUpdate(USensorBase* InSensor, bool bHighPriority) const;
 
 
-	IContainerTree* const GetNamedContainerTree(const FName SensorTag) { return RegisteredSensorTags.GetContainerTree(SensorTag); }
+	IContainerTree* GetNamedContainerTree(const FName SensorTag) { return RegisteredSensorTags.GetContainerTree(SensorTag); }
 	const IContainerTree* GetNamedContainerTree(const FName SensorTag) const { return RegisteredSensorTags.GetContainerTree(SensorTag); }
 
 	UFUNCTION(BlueprintCallable, Category = "QuadTree")

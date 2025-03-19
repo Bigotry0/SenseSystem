@@ -12,7 +12,7 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "HAL/ThreadSafeBool.h"
-#include "HAL/ThreadingBase.h"
+
 #include "Containers/Queue.h"
 
 
@@ -44,12 +44,10 @@ private:
 /**
  * SenseRunnable Thread
  */
-class FSenseRunnable final
-	: public FRunnable
-	//, FSingleThreadRunnable
+class FSenseRunnable final : public FRunnable
 {
 public:
-	FSenseRunnable(double InWaitTime = 0.0001, int32 InCounter = 10);
+	FSenseRunnable(double InWaitTime = 0.0001f, int32 InCounter = 10);
 	virtual ~FSenseRunnable() override;
 
 #if WITH_EDITOR
@@ -58,15 +56,15 @@ public:
 #endif
 
 	void EnsureCompletion();
+	void PauseThread();
+	void ContinueThread();
+	bool IsThreadPaused() const;
 
 	//FRunnable interface.
 	virtual bool Init() override;
 	virtual void Stop() override;
 	virtual void Exit() override;
 	virtual uint32 Run() override;
-
-	//virtual class FSingleThreadRunnable* GetSingleThreadInterface() { return nullptr; }
-	//virtual void Tick() override {};
 
 	//FSenseRunnable AddQueueSensors
 	bool AddQueueSensors(USensorBase* Sensor, bool bHighPriority = false);
@@ -75,13 +73,12 @@ private:
 	const double WaitTime;
 	const int32 CounterLimit;
 	int32 Counter = 0;
-	uint32 SenseThreadId = 0;
 
 	bool UpdateQueue();
 
 	//Thread to run the worker FRunnable on
 	FRunnableThread* Thread;
-	FEvent* WorkEvent;
+	FEvent* WaitState;
 
 	//As the name states those members are Thread safe
 	FThreadSafeBool m_Kill;
@@ -147,10 +144,46 @@ FORCEINLINE void FSenseRunnable::EnsureCompletion()
 	}
 }
 
+FORCEINLINE void FSenseRunnable::PauseThread()
+{
+	if (!IsThreadPaused())
+	{
+		m_Pause = true;
+#if WITH_EDITOR
+		if (bSenseThreadPauseLog)
+		{
+			UE_LOG(LogSenseSys, Log, TEXT("SenseThread PausedThread"));
+		}
+#endif
+	}
+}
+
+FORCEINLINE void FSenseRunnable::ContinueThread()
+{
+	if (IsThreadPaused())
+	{
+		m_Pause = false;
+		if (WaitState) /* && bForcedPause == false*/
+		{
+			WaitState->Trigger();
+		}
+#if WITH_EDITOR
+		if (bSenseThreadPauseLog)
+		{
+			UE_LOG(LogSenseSys, Log, TEXT("SenseThread ContinueThread"));
+		}
+#endif
+	}
+}
+
+FORCEINLINE bool FSenseRunnable::IsThreadPaused() const
+{
+	return m_Pause;
+}
+
 
 FORCEINLINE bool FSenseRunnable::Init()
 {
-	SenseThreadId = Thread->GetThreadID();
 #if WITH_EDITOR
 	if (bSenseThreadStateLog)
 	{
@@ -163,18 +196,19 @@ FORCEINLINE bool FSenseRunnable::Init()
 FORCEINLINE void FSenseRunnable::Stop()
 {
 	m_Kill = true;
-	WorkEvent->Trigger();
+	m_Pause = false;
+	if (WaitState)
+	{
+		WaitState->Trigger();
+	}
 }
 
 FORCEINLINE void FSenseRunnable::Exit()
 {
-	Stop();
-	Thread->Kill();
 #if WITH_EDITOR
 	if (bSenseThreadStateLog)
 	{
 		UE_LOG(LogSenseSys, Log, TEXT("SenseThread Exit"));
 	}
 #endif
-	SenseThreadId = 0;
 }

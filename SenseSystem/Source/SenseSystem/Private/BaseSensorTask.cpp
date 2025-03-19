@@ -10,46 +10,64 @@
 FSenseRunnable::FSenseRunnable(const double InWaitTime, const int32 InCounter) : WaitTime(InWaitTime), CounterLimit(InCounter)
 {
 	m_Kill = false;
-	Thread = FRunnableThread::Create(			 //
-		this,									 //
-		TEXT("FSenseRunnable"),					 //
-		0,										 //
-		EThreadPriority::TPri_Lowest,			 //
-		FPlatformAffinity::GetNoAffinityMask()); //
+	m_Pause = true;
+	WaitState = FGenericPlatformProcess::GetSynchEventFromPool(false);
 
-	WorkEvent = FPlatformProcess::GetSynchEventFromPool();
+	Thread = FRunnableThread::Create(this, TEXT("FSenseRunnable"), 0, TPri_BelowNormal);
+#if WITH_EDITOR
+	if (bSenseThreadStateLog)
+	{
+		UE_LOG(LogSenseSys, Log, TEXT("SenseThread Created"));
+	}
+#endif
 }
 
 FSenseRunnable::~FSenseRunnable()
 {
-	FPlatformProcess::ReturnSynchEventToPool(WorkEvent);
+	if (WaitState)
+	{
+		//Cleanup the FEvent
+		FGenericPlatformProcess::ReturnSynchEventToPool(WaitState);
+		WaitState = nullptr;
+	}
 	if (Thread)
 	{
 		//Cleanup the worker thread
 		delete Thread;
 		Thread = nullptr;
 	}
+#if WITH_EDITOR
+	if (bSenseThreadStateLog)
+	{
+		UE_LOG(LogSenseSys, Log, TEXT("SenseThread Destroyed"));
+	}
+#endif
 }
 
 uint32 FSenseRunnable::Run()
 {
 	while (!m_Kill)
 	{
-		if (m_Kill)
+		if (m_Pause)
 		{
-			return 0;
+			WaitState->Wait();
+			if (m_Kill)
+			{
+				return 0;
+			}
 		}
+
 		if (!m_Kill)
 		{
-			WorkEvent->Wait(1);
 			if (!UpdateQueue() || CounterLimit <= Counter)
 			{
 				Counter = 0;
+				WaitState->Wait(FTimespan::FromSeconds(WaitTime));
 			}
 		}
 		else
 		{
-			Thread->SetThreadPriority(EThreadPriority::TPri_Lowest);
+			PauseThread();
 		}
 	}
 	return 0;
@@ -68,35 +86,37 @@ bool FSenseRunnable::UpdateQueue()
 
 	if (Queue.IsEmpty())
 	{
-		Thread->SetThreadPriority(EThreadPriority::TPri_Lowest);
+		PauseThread();
 	}
-	if (Thread->GetThreadPriority() == EThreadPriority::TPri_Lowest /*IsThreadPaused()*/)
+	if (IsThreadPaused())
 	{
 		return true;
 	}
 
 	bool bPop = true;
-	USensorBase* const Sensor = Queue.Peek();
-	if (LIKELY(IsValid(Sensor) && Sensor->IsValidForTest_Short()))
 	{
-		if (LIKELY(Sensor->UpdateState.Get() == ESensorState::ReadyToUpdate))
+		USensorBase* const Sensor = Queue.Peek();
+		if (LIKELY(IsValid(Sensor) && Sensor->IsValidForTest_Short()))
 		{
-			bPop = Sensor->UpdateSensor();
-		}
-		else
-		{
-			Sensor->UpdateState = ESensorState::NotUpdate; //skip
-			bPop = true;
+			if (LIKELY(Sensor->UpdateState.Get() == ESensorState::ReadyToUpdate))
+			{
+				bPop = Sensor->UpdateSensor();
+			}
+			else
+			{
+				Sensor->UpdateState = ESensorState::NotUpdate; //skip
+				bPop = true;
+			}
 		}
 	}
 
-	if (bPop)
+	if (LIKELY(bPop))
 	{
 		Queue.Pop();
 		Counter++;
 		if (SensorQueue.IsEmpty() && HighSensorQueue.IsEmpty())
 		{
-			Thread->SetThreadPriority(EThreadPriority::TPri_Lowest);
+			PauseThread();
 		}
 	}
 	return bPop;
@@ -104,19 +124,15 @@ bool FSenseRunnable::UpdateQueue()
 
 bool FSenseRunnable::AddQueueSensors(USensorBase* Sensor, const bool bHighPriority)
 {
-	if (Sensor)
+	QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_AddQueueSensors);
+	if (bHighPriority)
 	{
-		QUICK_SCOPE_CYCLE_COUNTER(STAT_SenseSys_AddQueueSensors);
-		if (bHighPriority)
-		{
-			HighSensorQueue.Enqueue(Sensor);
-		}
-		else
-		{
-			SensorQueue.Enqueue(Sensor);
-		}
-		Thread->SetThreadPriority(EThreadPriority::TPri_Normal);
-		return true;
+		HighSensorQueue.Enqueue(Sensor);
 	}
-	return false;
+	else
+	{
+		SensorQueue.Enqueue(Sensor);
+	}
+	ContinueThread();
+	return true;
 }

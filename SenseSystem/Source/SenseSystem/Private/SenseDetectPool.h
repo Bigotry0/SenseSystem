@@ -3,19 +3,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Math/NumericLimits.h"
 #include "HAL/Platform.h"
 #include "Containers/Array.h"
 #include "Containers/SparseArray.h"
 #include <algorithm>
 
-#include "SenseSystem.h"
 #include "SensedStimulStruct.h"
-using ElementIndexType = FSenseSystemModule::ElementIndexType;
 
-class FSenseDetectPool final
+
+class FSenseDetectPool
 {
 	TSparseArray<FSensedStimulus> ObjPool;
+
 public:
 	FSenseDetectPool() { ObjPool.Reserve(128); }
 	~FSenseDetectPool() {}
@@ -23,25 +22,26 @@ public:
 	const TSparseArray<FSensedStimulus>& GetPool() const;
 	TSparseArray<FSensedStimulus>& GetPool();
 
-	TArray<ElementIndexType> Current;
-	TArray<ElementIndexType> Lost;
-	TArray<ElementIndexType> Forget;
+	TArray<uint16> Current;
+	TArray<uint16> Lost;
+	TArray<uint16> Forget;
 
-	TArray<ElementIndexType> NewCurrent;
-	TArray<ElementIndexType> LostCurrent;
+	TArray<uint16> NewCurrent;
+	TArray<uint16> LostCurrent;
 
+	/**best sensed detection struct*/
 	FTrackBestSenseScore Best_Sense;
 
-	TArray<ElementIndexType> DetectNew;
-	TArray<ElementIndexType> DetectCurrent;
+	TArray<uint16> DetectNew;
+	TArray<uint16> DetectCurrent;
 
 
 public:
-	void Add(const float CurrentTime, FSensedStimulus SS, const ElementIndexType ID)
+	void Add(const float CurrentTime, FSensedStimulus SS, const uint16 ID)
 	{
 		if (SS.TmpHash != MAX_uint32)
 		{
-			if (ID == TNumericLimits<ElementIndexType>::Max())
+			if (ID == MAX_uint16)
 			{
 				SS.FirstSensedTime = CurrentTime;
 				DetectNew.Add(AddToPool(MoveTemp(SS)));
@@ -55,10 +55,10 @@ public:
 		}
 	}
 
-	ElementIndexType ContainsInCurrentSense(const FSensedStimulus& InElem) const;
-	ElementIndexType ContainsInLostSense(const FSensedStimulus& InElem) const;
+	uint16 ContainsInCurrentSense(const FSensedStimulus& InElem) const;
+	uint16 ContainsInLostSense(const FSensedStimulus& InElem) const;
 
-	ElementIndexType ContainsIn(const FSensedStimulus& InElem, const TArray<ElementIndexType>& InArr) const;
+	uint16 ContainsIn(const FSensedStimulus& InElem, const TArray<uint16>& InArr) const;
 
 	void NewSensedUpdate(EOnSenseEvent Ost, bool bOverrideSenseState, bool bNewSenseForcedByBestScore);
 	void EmptyUpdate(EOnSenseEvent Ost, bool bOverrideSenseState = true);
@@ -68,7 +68,7 @@ public:
 
 	void NewAgeUpdate(float CurrentTime, EOnSenseEvent Ost);
 
-	TArray<FSensedStimulus> GetArray_Copy(const TArray<ElementIndexType>& Arr) const;
+	TArray<FSensedStimulus> GetArray_Copy(const TArray<uint16>& Arr) const;
 	TArray<FSensedStimulus> GetArrayCopy_SenseEvent(ESensorArrayByType SenseEvent) const;
 
 	void ResetArr(ESensorArrayByType SenseEvent);
@@ -76,19 +76,30 @@ public:
 
 	void Empty();
 
+	friend FArchive& operator<<(FArchive& Ar, FSenseDetectPool& Sd)
+	{
+		//Ar << Sd.ObjPool;
+		//Ar << Sd.Current;
+		//Ar << Sd.Lost;
+		//Ar << Sd.Forget;
+		//Ar << Sd.NewCurrent;
+		//Ar << Sd.LostCurrent;
+		//Ar << Sd.Best_Sense;
+		//Ar << Sd.DetectNew;
+		//Ar << Sd.DetectCurrent;
+		return Ar;
+	}
 
 	template<typename T, typename SortTPredicate>
 	static void BestIdsByPredicate(const int32 Count, const TArray<T>& InArr, SortTPredicate Predicate, TArray<int32>& Out);
 
-	bool LostIndex(const ElementIndexType ID);
-
 private:
 
-	FORCEINLINE ElementIndexType AddToPool(FSensedStimulus&& Elem)
+	FORCEINLINE uint16 AddToPool(FSensedStimulus&& Elem)
 	{
 		return ObjPool.Add(MoveTemp(Elem));
 	}
-	FORCEINLINE ElementIndexType AddToPool(const ElementIndexType PoolId, FSensedStimulus&& Elem)
+	FORCEINLINE uint16 AddToPool(const uint16 PoolId, FSensedStimulus&& Elem)
 	{
 		FSensedStimulus& Obj = ObjPool[PoolId];
 		Elem.FirstSensedTime = Obj.FirstSensedTime;
@@ -96,16 +107,16 @@ private:
 		return PoolId;
 	}
 
-	void BestScoreUpdt(TArray<ElementIndexType>& InArr, bool bNewSenseForcedByBestScore);
+	void BestScoreUpdt(TArray<uint16>& InArr, bool bNewSenseForcedByBestScore);
 
 
-	TArray<ElementIndexType>& BySenseEvent_Ref(ESensorArrayByType SenseEvent);
-	const TArray<ElementIndexType>& BySenseEvent_Ref(ESensorArrayByType SenseEvent) const;
+	TArray<uint16>& BySenseEvent_Ref(ESensorArrayByType SenseEvent);
+	const TArray<uint16>& BySenseEvent_Ref(ESensorArrayByType SenseEvent) const;
 
-	void ResetArr(TArray<ElementIndexType>& A, int32 Size);
-	void ResetArr(TArray<ElementIndexType>& A) { ResetArr(A, A.Num()); }
-	void EmptyArr(TArray<ElementIndexType>& A);
-	void EmptyArr(TArray<ElementIndexType>&& A);
+	void ResetArr(TArray<uint16>& A, int32 Size);
+	void ResetArr(TArray<uint16>& A) { ResetArr(A, A.Num()); }
+	void EmptyArr(TArray<uint16>& A);
+	void EmptyArr(TArray<uint16>&& A);
 
 
 #if WITH_EDITOR
@@ -136,7 +147,7 @@ FORCEINLINE TSparseArray<FSensedStimulus>& FSenseDetectPool::GetPool()
 	return ObjPool;
 }
 
-FORCEINLINE TArray<ElementIndexType>& FSenseDetectPool::BySenseEvent_Ref(const ESensorArrayByType SenseEvent)
+FORCEINLINE TArray<uint16>& FSenseDetectPool::BySenseEvent_Ref(const ESensorArrayByType SenseEvent)
 {
 	switch (SenseEvent)
 	{
@@ -149,7 +160,7 @@ FORCEINLINE TArray<ElementIndexType>& FSenseDetectPool::BySenseEvent_Ref(const E
 	checkNoEntry();
 	return Current;
 }
-FORCEINLINE const TArray<ElementIndexType>& FSenseDetectPool::BySenseEvent_Ref(const ESensorArrayByType SenseEvent) const
+FORCEINLINE const TArray<uint16>& FSenseDetectPool::BySenseEvent_Ref(const ESensorArrayByType SenseEvent) const
 {
 	switch (SenseEvent)
 	{
@@ -167,7 +178,7 @@ FORCEINLINE TArray<FSensedStimulus> FSenseDetectPool::GetArrayCopy_SenseEvent(co
 	return GetArray_Copy(BySenseEvent_Ref(SenseEvent));
 }
 
-FORCEINLINE void FSenseDetectPool::ResetArr(TArray<ElementIndexType>& A, const int32 Size)
+FORCEINLINE void FSenseDetectPool::ResetArr(TArray<uint16>& A, const int32 Size)
 {
 	for (const auto i : A)
 	{
@@ -181,7 +192,7 @@ FORCEINLINE void FSenseDetectPool::ResetArr(const ESensorArrayByType SenseEvent)
 	ResetArr(BySenseEvent_Ref(SenseEvent));
 }
 
-FORCEINLINE void FSenseDetectPool::EmptyArr(TArray<ElementIndexType>& A)
+FORCEINLINE void FSenseDetectPool::EmptyArr(TArray<uint16>& A)
 {
 	if (A.Num())
 	{
@@ -192,7 +203,7 @@ FORCEINLINE void FSenseDetectPool::EmptyArr(TArray<ElementIndexType>& A)
 		A.Empty();
 	}
 }
-FORCEINLINE void FSenseDetectPool::EmptyArr(TArray<ElementIndexType>&& A)
+FORCEINLINE void FSenseDetectPool::EmptyArr(TArray<uint16>&& A)
 {
 	if (A.Num())
 	{
@@ -210,11 +221,11 @@ FORCEINLINE void FSenseDetectPool::EmptyArr(const ESensorArrayByType SenseEvent)
 	EmptyArr(BySenseEvent_Ref(SenseEvent));
 }
 
-FORCEINLINE ElementIndexType FSenseDetectPool::ContainsInCurrentSense(const FSensedStimulus& InElem) const
+FORCEINLINE uint16 FSenseDetectPool::ContainsInCurrentSense(const FSensedStimulus& InElem) const
 {
 	return ContainsIn(InElem, Current);
 }
-FORCEINLINE ElementIndexType FSenseDetectPool::ContainsInLostSense(const FSensedStimulus& InElem) const
+FORCEINLINE uint16 FSenseDetectPool::ContainsInLostSense(const FSensedStimulus& InElem) const
 {
 	return ContainsIn(InElem, Lost);
 }
@@ -229,7 +240,7 @@ inline void FSenseDetectPool::BestIdsByPredicate(const int32 Count, const TArray
 		if (Count == 1) // O(N)
 		{
 			Out.Init(0, 1);
-			for (int32 i = 1; i < InArrNum; i++)
+			for (int32 i = 1; i < InArrNum; ++i)
 			{
 				if (Predicate(i, Out[0]))
 				{
@@ -240,7 +251,7 @@ inline void FSenseDetectPool::BestIdsByPredicate(const int32 Count, const TArray
 		else
 		{
 			Out.Reset(InArrNum);
-			for (int32 i = 0; i < InArrNum; i++)
+			for (int32 i = 0; i < InArrNum; ++i)
 			{
 				Out.Add(i);
 			}
@@ -262,7 +273,7 @@ inline void FSenseDetectPool::BestIdsByPredicate(const int32 Count, const TArray
 
 			if (Out.Num() > Count)
 			{
-				Out.RemoveAt(Count, Out.Num() - Count, EAllowShrinking::Yes);
+				Out.RemoveAt(Count, Out.Num() - Count, true);
 			}
 		}
 	}

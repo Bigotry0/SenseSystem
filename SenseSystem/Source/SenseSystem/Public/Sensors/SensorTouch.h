@@ -94,7 +94,5 @@ public:
 
 	virtual void InitializeFromReceiver(USenseReceiverComponent* InSenseReceiver) override;
 
-	TSet<USenseStimulusBase*> NeedLost;
-	void LostCurrentSensed();
-	void UpdateNeedLost();
+	//virtual void Serialize(FArchive& Ar) override;
 };

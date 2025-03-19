@@ -7,7 +7,7 @@
 #include "Modules/ModuleManager.h"
 #include "Templates/SharedPointer.h"
 
-class FSenseSystemEditorModule final : public IModuleInterface
+class FSenseSystemEditorModule : public IModuleInterface
 {
 public:
 	/** IModuleInterface implementation */
