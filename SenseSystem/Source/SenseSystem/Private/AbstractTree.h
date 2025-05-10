@@ -1187,7 +1187,6 @@ private:
 		}
 		checkNoEntry();
 		UE_ASSUME(0);
-		return MaxIndexQt;
 	}
 
 
